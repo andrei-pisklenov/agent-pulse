@@ -1,0 +1,13 @@
+appId: io.github.andrei-pisklenov.agent-pulse
+productName: Agent Pulse
+# Must be exact; keep in step with the installed electron package.
+electronVersion: 45.0.0
+directories:
+  output: release
+files:
+  - out/**
+mac:
+  category: public.app-category.developer-tools
+  target: dmg
+  extendInfo:
+    LSUIElement: true

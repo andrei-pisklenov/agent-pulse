@@ -1,0 +1,49 @@
+{
+  "name": "agent-pulse",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Tiny always-on-top macOS panel that tracks every Claude Code session, plan limits and token usage",
+  "license": "MIT",
+  "author": "andrei-pisklenov",
+  "repository": "github:andrei-pisklenov/agent-pulse",
+  "main": "./out/main/index.js",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "packageManager": "yarn@4.17.1",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "package": "electron-vite build && electron-builder --mac --dir",
+    "install-app": "yarn package && sh scripts/install-app.sh",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "typecheck": "tsc -p tsconfig.node.json && tsc -p tsconfig.web.json",
+    "test": "vitest run --dir test",
+    "snapshot": "tsx scripts/snapshot.ts",
+    "media": "electron-vite build && vite build -c scripts/media/vite.config.mjs && electron scripts/media/capture.mjs",
+    "postinstall": "node node_modules/electron/install.js"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@stylistic/eslint-plugin": "^5.10.0",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "electron": "^45.0.0",
+    "electron-builder": "26.18.0",
+    "electron-vite": "^6.0.0",
+    "eslint": "^10.13.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.13.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "tsx": "^4",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.72.1",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
+  }
+}

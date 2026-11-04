@@ -1,0 +1,205 @@
+<!doctype html>
+<!--
+  A mock macOS desktop for the README screenshots. The capture script (capture.mjs) drives it through
+  `window.stage`; the panel itself is the real built renderer, loaded in an iframe with made-up data.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Agent Pulse stage</title>
+<script src="../../out/media/tray.js"></script>
+<style>
+  html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; }
+  body {
+    position: relative;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Wallpapers: plain gradients, so no image rights are involved. */
+  .wall-dusk {
+    background:
+      radial-gradient(ellipse 70% 60% at 18% 28%, rgba(96, 72, 190, .75), transparent 70%),
+      radial-gradient(ellipse 60% 55% at 85% 18%, rgba(217, 119, 87, .65), transparent 70%),
+      radial-gradient(ellipse 80% 70% at 70% 95%, rgba(40, 118, 160, .7), transparent 70%),
+      #171826;
+  }
+  .wall-dawn {
+    background:
+      radial-gradient(ellipse 70% 60% at 15% 25%, rgba(255, 196, 160, .9), transparent 70%),
+      radial-gradient(ellipse 60% 60% at 88% 20%, rgba(160, 190, 255, .9), transparent 70%),
+      radial-gradient(ellipse 80% 70% at 60% 100%, rgba(186, 160, 240, .85), transparent 70%),
+      #eae6f2;
+  }
+  .wall-plain { background: #1b1b1f; }
+
+  .menubar {
+    position: absolute; inset: 0 0 auto 0; height: 24px; z-index: 5;
+    display: flex; align-items: center; gap: 18px; padding: 0 14px;
+    font-size: 13px; color: #fff;
+    background: rgba(18, 18, 26, .32);
+    backdrop-filter: blur(30px) saturate(1.6);
+  }
+  .light .menubar { color: #1d1d1f; background: rgba(255, 255, 255, .38); }
+  .menubar b { font-weight: 700; }
+  .menubar .right { margin-left: auto; display: flex; align-items: center; gap: 16px; }
+  .tray { display: flex; align-items: center; gap: 3px; font-variant-numeric: tabular-nums; }
+  .tray img { height: 18px; filter: invert(1); image-rendering: pixelated; }
+  .light .tray img { filter: none; opacity: .88; }
+  .menubar .glyph { opacity: .9; }
+
+  /* A terminal window in the background, for context. */
+  .term {
+    position: absolute; border-radius: 12px; overflow: hidden;
+    background: rgba(22, 22, 26, .94); color: #d8d8dc;
+    box-shadow: 0 0 0 .5px rgba(0, 0, 0, .6), 0 22px 60px rgba(0, 0, 0, .45);
+    font: 12.5px/1.65 "SF Mono", ui-monospace, Menlo, monospace;
+  }
+  .term .bar { height: 30px; display: flex; align-items: center; gap: 8px; padding: 0 12px; background: rgba(255, 255, 255, .04); }
+  .term .dot { width: 12px; height: 12px; border-radius: 50%; }
+  .term .title { flex: 1; text-align: center; font: 12px -apple-system, sans-serif; color: #9a9aa2; margin-right: 52px; }
+  .term pre { margin: 0; padding: 14px 18px; white-space: pre-wrap; font: inherit; }
+  .term .dim { color: #85858d; }
+  .term .ok { color: #5fcb8a; }
+  .term .acc { color: #e8a37f; }
+  .term .warn { color: #f0a43a; }
+  .term .sel { color: #fff; background: rgba(255, 255, 255, .08); }
+
+  .panel { position: absolute; z-index: 4; border-radius: 10px; overflow: hidden; }
+  .panel.square { border-radius: 0; }
+  .panel.shadow { box-shadow: 0 0 0 .5px rgba(0, 0, 0, .55), 0 18px 48px rgba(0, 0, 0, .42); }
+  .light .panel.shadow { box-shadow: 0 0 0 .5px rgba(0, 0, 0, .22), 0 18px 48px rgba(40, 30, 80, .25); }
+  /* Stands in for macOS "popover" vibrancy, which a capture of the web contents can't see. */
+  .panel.glass { background: rgba(38, 38, 44, .62); backdrop-filter: blur(36px) saturate(1.8); }
+  .light .panel.glass { background: rgba(246, 246, 249, .68); }
+  .panel iframe { display: block; border: 0; background: transparent; width: 1px; height: 1px; }
+
+  /* Pixel-art tiles for the crab GIFs. */
+  .tiles { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 14px; background: #f4f1ea; }
+  .tile { width: 142px; height: 132px; border-radius: 14px; background: #1f1e1b; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; }
+  .tile canvas { width: 100px; height: 72px; image-rendering: pixelated; }
+  .tile span { color: #e8e6df; font: 600 12px -apple-system, sans-serif; letter-spacing: .01em; }
+  .tile small { color: #a8a59a; font: 11px -apple-system, sans-serif; margin-top: -8px; }
+</style>
+</head>
+<body>
+<script>
+  const el = (tag, props = {}, children = []) => {
+    const node = Object.assign(document.createElement(tag), props)
+    node.append(...children)
+    return node
+  }
+  const decode = async (src) => {
+    const img = new Image()
+    img.src = src
+    await img.decode()
+    return img
+  }
+
+  let tray = null
+  let tiles = []
+  let iframe = null
+
+  const menubar = (s) => {
+    tray = s.tray
+    const img = el('img')
+    tray.img = img
+    return el('div', { className: 'menubar' }, [
+      el('b', { textContent: s.app }),
+      ...s.menus.map(m => el('span', { textContent: m })),
+      el('div', { className: 'right' }, [
+        el('span', { className: 'tray' }, [img, el('span', { textContent: s.tray.text })]),
+        el('span', { className: 'glyph', textContent: s.clock }),
+      ]),
+    ])
+  }
+
+  const terminal = (t) => {
+    const lights = ['#ff5f57', '#febc2e', '#28c840'].map(c => el('span', { className: 'dot', style: `background:${c}` }))
+    const pre = el('pre', { innerHTML: t.html })
+    return el('div', { className: 'term', style: t.style }, [
+      el('div', { className: 'bar' }, [...lights, el('span', { className: 'title', textContent: t.title })]),
+      pre,
+    ])
+  }
+
+  window.stage = {
+    /** Builds a scene; resolves once the panel iframe (if any) has loaded. */
+    async render(s) {
+      document.body.className = `${s.wall} ${s.light ? 'light' : ''}`
+      document.body.replaceChildren()
+      tray = null
+      tiles = []
+      if (s.menubar) document.body.append(menubar(s.menubar))
+      for (const t of s.terminals ?? []) document.body.append(terminal(t))
+      if (s.tiles) {
+        const row = el('div', { className: 'tiles' })
+        tiles = s.tiles.map((t) => {
+          const canvas = el('canvas', { width: 50, height: 36 })
+          row.append(el('div', { className: 'tile' }, [canvas, el('span', { textContent: t.label }), ...(t.note ? [el('small', { textContent: t.note })] : [])]))
+          return { ...t, canvas }
+        })
+        document.body.append(row)
+      }
+      if (s.panel) {
+        const p = s.panel
+        iframe = el('iframe', { src: `../../out/renderer/index.html${p.hash ?? ''}` })
+        if (p.fixedSize) Object.assign(iframe.style, { width: `${p.fixedSize[0]}px`, height: `${p.fixedSize[1]}px` })
+        const box = el('div', { className: `panel ${p.glass ? 'glass' : ''} ${p.square ? 'square' : ''} shadow`, style: p.style }, [iframe])
+        document.body.append(box)
+        await new Promise(resolve => iframe.addEventListener('load', resolve, { once: true }))
+      }
+      await this.frame(0)
+    },
+
+    /** Sizes the panel to what the renderer reported, as the real window does. */
+    size(width, height) {
+      iframe.style.width = `${width}px`
+      iframe.style.height = `${height}px`
+    },
+
+    /** The panel's box plus `margin` points around it, clipped to the stage. */
+    bounds(margin) {
+      const r = document.querySelector('.panel').getBoundingClientRect()
+      const x = Math.max(0, r.left - margin)
+      const y = Math.max(0, r.top - margin)
+      return {
+        x: Math.round(x), y: Math.round(y),
+        width: Math.round(Math.min(innerWidth, r.right + margin) - x), height: Math.round(Math.min(innerHeight, r.bottom + margin) - y),
+      }
+    },
+
+    /** Draws animation frame `f` of the menu-bar icon and every tile. */
+    async frame(f) {
+      if (tray) tray.img.src = agentPulse.drawTrayIcon(tray.icon, tray.mood, f, tray.dance) ?? ''
+      for (const t of tiles) {
+        const c = t.canvas.getContext('2d')
+        c.clearRect(0, 0, 50, 36)
+        const img = await decode(agentPulse.drawTrayIcon('crab', t.mood, f, t.dance))
+        // Template images are black; paint them light like a dark menu bar would.
+        c.drawImage(img, 0, 0)
+        c.globalCompositeOperation = 'source-in'
+        c.fillStyle = '#f4f1ea'
+        c.fillRect(0, 0, 50, 36)
+        c.globalCompositeOperation = 'source-over'
+      }
+      if (tray?.img.src) await tray.img.decode().catch(() => undefined)
+    },
+
+    /**
+     * Smallest loop length (in frames) of the crab in these moods and dances, so GIFs loop seamlessly.
+     * A crab that never repeats within `max` frames (the shimmy's sine wobble) is left out.
+     */
+    period(list, max = 240) {
+      const loop = ({ mood, dance }) => {
+        const frames = Array.from({ length: max * 2 }, (_, f) => agentPulse.drawTrayIcon('crab', mood, f, dance))
+        for (let p = 1; p <= max; p++) if (frames.slice(0, max).every((d, i) => d === frames[i + p])) return p
+        return null
+      }
+      const gcd = (a, b) => (b ? gcd(b, a % b) : a)
+      return list.map(loop).filter(Boolean).reduce((a, b) => (a * b) / gcd(a, b), 1)
+    },
+  }
+</script>
+</body>
+</html>
