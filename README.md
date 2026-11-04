@@ -10,6 +10,22 @@ If you run several Claude Code sessions at once, in a terminal, in the Claude de
 
 > Agent Pulse is an independent, unofficial project. It is not affiliated with, endorsed by or supported by Anthropic. Claude and Claude Code are trademarks of Anthropic, PBC, used here only to say what the app works with.
 
+## Quick start
+
+Paste this into Claude Code, and it builds and installs Agent Pulse for you:
+
+```text
+Install Agent Pulse for me. Clone https://github.com/andrei-pisklenov/agent-pulse into ~/agent-pulse and follow the Install section of its README. Check the requirements first, and ask me before you install anything system-wide. When you're done, check that Agent Pulse is running from /Applications.
+```
+
+Or start it from a terminal:
+
+```bash
+claude "Install Agent Pulse for me. Clone https://github.com/andrei-pisklenov/agent-pulse into ~/agent-pulse and follow the Install section of its README. Check the requirements first, and ask me before you install anything system-wide. When you're done, check that Agent Pulse is running from /Applications."
+```
+
+It takes a few minutes, most of them spent downloading Electron. To do it by hand, see [Install](#install).
+
 ## What it shows
 
 - **Every session in one place.** Terminal `claude`, the Claude desktop app (Code tab) and the VS Code extension, grouped by what they need from you: *needs input*, *running*, *finished* (until you open it) and *idle*. Desktop sessions that ended in the last 24 hours are listed too.
@@ -101,8 +117,9 @@ Token counts leave out cache reads by default, because they dwarf everything els
 
 You need:
 
-- A Mac with Apple Silicon. Intel Macs should work but are untested.
-- Node.js 22.12 or later, with Corepack enabled (`corepack enable`), which provides the pinned Yarn version.
+- macOS 13 Ventura or later, on Apple Silicon. Intel Macs should work but are untested: the build lands in `release/mac/` instead of `release/mac-arm64/`, and `yarn install-app` picks the right one.
+- Git. If it's missing, macOS offers to install the Xcode Command Line Tools the first time you run `git`.
+- Node.js 22.12 or later, with Corepack enabled (`corepack enable`), which provides the pinned Yarn version. Node 25 and later no longer include Corepack, so run `npm install -g corepack` first.
 - Claude Code, installed and signed in.
 
 Then build and install it:
@@ -114,7 +131,21 @@ yarn install
 yarn install-app
 ```
 
-`yarn install-app` builds `Agent Pulse.app`, copies it to `/Applications` and starts it. If Agent Pulse is already running, it quits it first: the installed app, a packaged copy, or this checkout's `yarn dev` build. It touches nothing else. Run it again whenever you pull changes.
+`yarn install-app` builds `Agent Pulse.app`, copies it to `/Applications` and starts it. If Agent Pulse is already running, it quits it first: the installed app, a packaged copy, or this checkout's `yarn dev` build. It touches nothing else.
+
+When it's done, the crab appears in the menu bar. To check from a terminal that the installed copy is the one running:
+
+```bash
+pgrep -fl "/Applications/Agent Pulse.app"
+```
+
+To update, pull and install again:
+
+```bash
+git pull && yarn install && yarn install-app
+```
+
+To uninstall, switch off **Launch at login** in the menu if it's on, quit Agent Pulse, and delete `/Applications/Agent Pulse.app`. Its settings and state are in `~/Library/Application Support/agent-pulse`; delete that folder too to remove them.
 
 A few things to know:
 
