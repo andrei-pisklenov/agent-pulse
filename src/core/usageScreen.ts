@@ -14,6 +14,69 @@ export const cleanTerminalText = (raw: string): string =>
     .replace(/[▀-▟]/g, ' ')
     .replace(/\s+/g, ' ')
 
+/** Claude Code's folder trust prompt, in current ("I trust this folder") and older ("trust the files in this folder") wording. */
+export const TRUST_PROMPT = /trust (the files in )?this folder/i
+
+/**
+ * Replays terminal output into the lines it leaves on screen. Claude Code redraws by moving the
+ * cursor and overwriting single characters, so flattened text keeps stale parts that the screen no
+ * longer shows. Handles cursor moves, carriage return, line feed and erases; ignores styling.
+ */
+export const renderScreen = (raw: string, cols = 160): string[] => {
+  const lines: string[][] = [[]]
+  let row = 0
+  let col = 0
+  const line = () => (lines[row] ??= [])
+  // eslint-disable-next-line no-control-regex
+  const token = /\x1b\[([0-?]*)[ -/]*([@-~])|\x1b[\]P^_][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()*+].|\x1b.|[\s\S]/gu
+  for (const [text, params, command] of raw.matchAll(token)) {
+    if (command) {
+      const n = Math.max(1, Number(params?.split(';')[0]) || 1)
+      if (command === 'A') row = Math.max(0, row - n)
+      else if (command === 'B') row += n
+      else if (command === 'C') col = Math.min(cols - 1, col + n)
+      else if (command === 'D') col = Math.max(0, col - n)
+      else if (command === 'G') col = Math.min(cols - 1, n - 1)
+      else if (command === 'K') {
+        const l = line()
+        if (params === '1') l.fill(' ', 0, col + 1)
+        else if (params === '2') l.length = 0
+        else l.length = Math.min(l.length, col)
+      } else if (command === 'J' && (params === '2' || params === '3')) {
+        lines.length = 0
+        row = 0
+        col = 0
+      }
+    } else if (text === '\r') col = 0
+    else if (text === '\n') row++
+    // eslint-disable-next-line no-control-regex
+    else if (!/^[\x00-\x1f\x7f]/.test(text)) {
+      if (col >= cols) {
+        row++
+        col = 0
+      }
+      const l = line()
+      while (l.length < col) l.push(' ')
+      l[col++] = text
+    }
+  }
+  return Array.from(lines, l => (l ?? []).join('').trimEnd())
+}
+
+/**
+ * Which option of the folder trust prompt is selected: the one the `❯` marker is in front of on the
+ * screen `raw` leaves behind. Null when no option is marked yet.
+ */
+export const trustPromptSelection = (raw: string): 'yes' | 'no' | null => {
+  let selected: 'yes' | 'no' | null = null
+  for (const l of renderScreen(raw)) {
+    for (const m of cleanTerminalText(l).matchAll(/❯\s*(?:\d+\.\s*)?(yes|no)\b/gi)) {
+      selected = m[1]!.toLowerCase() as 'yes' | 'no'
+    }
+  }
+  return selected
+}
+
 interface WallTime {
   year: number
   month: number

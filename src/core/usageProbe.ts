@@ -4,7 +4,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import type { Limits } from './types.js'
-import { cleanTerminalText, parseUsageScreen } from './usageScreen.js'
+import { TRUST_PROMPT, cleanTerminalText, parseUsageScreen, trustPromptSelection } from './usageScreen.js'
 
 export interface ProbeOptions {
   /** Empty folder the probe runs in; sessions started there are hidden from the panel. */
@@ -66,8 +66,11 @@ export const probeUsage = async (options: ProbeOptions): Promise<Limits> => {
       }
     }
     let output = ''
+    let ready = false
     let typed = false
-    let trusted = false
+    // The folder trust prompt: not seen yet, waiting for an option to be marked, moving to "Yes", answered.
+    let trust: 'none' | 'choosing' | 'moving' | 'accepted' = 'none'
+    let downs = 0
     let done = false
     const timers: NodeJS.Timeout[] = []
 
@@ -81,16 +84,38 @@ export const probeUsage = async (options: ProbeOptions): Promise<Limits> => {
     }
     const type = (text: string, delay: number) => timers.push(setTimeout(() => child.stdin.write(text), delay))
 
+    // The probe folder is our own empty directory, so it is trusted. Versions differ in which option
+    // they pre-select, so go by the marker on the replayed screen: Enter on "Yes", else Down and wait
+    // for the redraw that moves the marker (until then the screen still shows "No").
+    const answerTrust = () => {
+      const selected = trustPromptSelection(output)
+      if (selected === 'yes') {
+        trust = 'accepted'
+        type('\r', 300)
+      } else if (selected === 'no' && trust === 'choosing') {
+        if (downs >= 3) return finish(failed('could not select "Yes" in the folder trust prompt'))
+        downs++
+        trust = 'moving'
+        type('\x1b[B', 300)
+        // No redraw with "Yes" marked: look again at what the screen shows.
+        timers.push(setTimeout(() => {
+          if (trust !== 'moving') return
+          trust = 'choosing'
+          answerTrust()
+        }, 1800))
+      }
+    }
+
     child.stdout.on('data', (chunk: Buffer) => {
       output += chunk.toString('utf8')
       const screen = cleanTerminalText(output.slice(-20_000))
-      if (!trusted && /trust (the files in )?this folder/i.test(screen)) {
-        // The probe folder is our own empty directory.
-        trusted = true
-        type('\r', 300)
+      if (trust === 'none' && TRUST_PROMPT.test(screen)) trust = 'choosing'
+      if (trust === 'choosing' || trust === 'moving') {
+        answerTrust()
         return
       }
       if (!typed && /for shortcuts|\? for|bypass|Try "/i.test(screen)) {
+        ready = true
         typed = true
         type('/usage', 600)
         type('\r', 1500)
@@ -102,16 +127,20 @@ export const probeUsage = async (options: ProbeOptions): Promise<Limits> => {
     })
     child.on('error', error => finish(failed(error.message)))
     child.stdin.on('error', () => undefined)
-    child.on('exit', () => finish(parseUsageScreen(output) ?? failed('claude exited before showing /usage')))
-    // If the welcome prompt was not recognised, type anyway.
+    child.on('exit', () => finish(parseUsageScreen(output) ?? failed(
+      trust !== 'none' && !ready ? 'folder trust prompt was declined' : 'claude exited before showing /usage',
+    )))
+    // If the welcome prompt was not recognised, type anyway, unless the trust prompt is still open.
     timers.push(setTimeout(() => {
-      if (!typed) {
+      if (!typed && (trust === 'none' || trust === 'accepted')) {
         typed = true
         type('/usage', 0)
         type('\r', 900)
       }
     }, 7000))
-    timers.push(setTimeout(() => finish(parseUsageScreen(output) ?? failed('timed out reading /usage')), options.timeoutMs ?? 30_000))
+    timers.push(setTimeout(() => finish(parseUsageScreen(output) ?? failed(
+      trust === 'choosing' || trust === 'moving' ? 'timed out at the folder trust prompt' : 'timed out reading /usage',
+    )), options.timeoutMs ?? 30_000))
   })
 }
 
