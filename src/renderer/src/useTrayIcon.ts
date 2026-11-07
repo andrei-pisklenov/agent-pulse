@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import type { Snapshot } from '../../core/types'
 import type { CrabDance, TrayIcon } from '../../shared/types'
 import { drawTrayIcon, isAnimated, type TrayMood } from './trayIcon'
@@ -18,11 +18,13 @@ export const useTrayIcon = (icon: TrayIcon, dance: CrabDance, snapshot: Snapshot
     [busy, waiting, finished, sessionPercent, weekPercent],
   )
 
+  // Survives mood changes, so a new session count doesn't snap the animation back to its start.
+  const frame = useRef(0)
+
   useEffect(() => {
-    let frame = 0
     let last = ''
     const paint = () => {
-      const drawn = drawTrayIcon(icon, mood, frame++, dance) ?? ''
+      const drawn = drawTrayIcon(icon, mood, frame.current++, dance) ?? ''
       if (drawn === last) return
       last = drawn
       window.pulse.setTrayImage(drawn)
