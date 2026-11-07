@@ -114,7 +114,6 @@ const drawPose = (c: CanvasRenderingContext2D, p: Pose) => {
 export interface CrabMood {
   running: boolean
   waiting: boolean
-  sweating: boolean
 }
 
 /**
@@ -133,8 +132,4 @@ export const drawCrab = (c: CanvasRenderingContext2D, m: CrabMood, dance: CrabDa
     pose = { ...BASE, y: BASE.y + 1 + beat(f, 8), legs: [0, 0, 0, 0], eyes: 'closed' }
   }
   drawPose(c, pose)
-  if (m.sweating) {
-    c.fillRect(40, 0, 2, 2)
-    c.fillRect(38, 2, 4, 4)
-  }
 }

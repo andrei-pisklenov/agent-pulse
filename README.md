@@ -55,10 +55,10 @@ Snap it to the top or bottom of the screen and it becomes a strip:
   <img src="docs/media/menubar.gif" alt="The menu bar: a pixel crab walking back and forth with its claws raised, next to the counts !1 ▶2 ✓1." width="300">
 </p>
 
-A pixel crab in the menu bar tells you the same thing at a glance. The counts next to it are sessions that need input `!`, are running `▶` and have finished `✓`. It sleeps when there is nothing to do, looks puzzled when a session needs you, gets to work while sessions run, waves when one of them needs you, and sweats when you get close to a limit.
+A pixel crab in the menu bar tells you the same thing at a glance. The counts next to it are sessions that need input `!`, are running `▶` and have finished `✓`. It sleeps when there is nothing to do, looks puzzled when a session needs you, gets to work while sessions run, and waves when one of them needs you. Click it for a menu with your 5-hour and weekly limits, when they reset, and the sessions that need you.
 
 <p align="center">
-  <img src="docs/media/crab-moods.gif" alt="Five crab moods: asleep with a Z, puzzled with a question mark, working, waving with both claws up, and sweating near a limit." width="100%">
+  <img src="docs/media/crab-moods.gif" alt="Four crab moods: asleep with a Z, puzzled with a question mark, working, and waving with both claws up." width="100%">
 </p>
 
 While sessions work, it dances. Pick your favourite under Menu bar → Crab → Dance:

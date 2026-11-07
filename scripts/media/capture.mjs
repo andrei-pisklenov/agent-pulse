@@ -203,10 +203,9 @@ const main = async () => {
       { label: 'Puzzled', note: 'a session needs you', mood: { ...busy, busy: 0, waiting: 1 } },
       { label: 'Working', note: 'sessions running', mood: busy },
       { label: 'Waving', note: 'running, one needs you', mood: { ...busy, waiting: 1 } },
-      { label: 'Sweating', note: 'near a limit', mood: { ...busy, sessionPercent: 91 } },
     ].map(t => ({ dance: 'walk', ...t })),
   }
-  for (const [name, s, width] of [['crab-dances', dances, 1080], ['crab-moods', moods, 820]]) {
+  for (const [name, s, width] of [['crab-dances', dances, 1080], ['crab-moods', moods, 660]]) {
     await openStage(width, 170, s)
     const frames = await win.webContents.executeJavaScript(`stage.period(${JSON.stringify(s.tiles)})`)
     await gif(name, width, 170, s, frames)

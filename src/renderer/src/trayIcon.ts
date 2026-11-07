@@ -102,16 +102,6 @@ const octopus = (c: Ctx, fg: string, m: TrayMood, f: number) => {
   }
   c.restore()
 
-  // Sweat drop when a limit is nearly used up.
-  if (Math.max(m.sessionPercent ?? 0, m.weekPercent ?? 0) >= 85) {
-    c.fillStyle = fg
-    c.beginPath()
-    c.moveTo(cx - 13, cy - 7)
-    c.quadraticCurveTo(cx - 10, cy - 1, cx - 13, cy)
-    c.quadraticCurveTo(cx - 16, cy - 1, cx - 13, cy - 7)
-    c.fill()
-  }
-
   c.fillStyle = fg
   if (puzzled) questionMark(c, 38, 4, f)
   // Snores drift up while asleep.
@@ -237,9 +227,8 @@ const bars = (c: Ctx, fg: string, m: TrayMood) => {
 }
 
 const crab = (c: Ctx, fg: string, m: TrayMood, f: number, dance: CrabDance) => {
-  const sweating = Math.max(m.sessionPercent ?? 0, m.weekPercent ?? 0) >= 85
   c.fillStyle = fg
-  drawCrab(c, { running: m.busy > 0, waiting: m.waiting > 0, sweating }, dance, f)
+  drawCrab(c, { running: m.busy > 0, waiting: m.waiting > 0 }, dance, f)
   if (!m.busy && m.waiting) questionMark(c, 42, 2, f)
   // A solid pixel "Z" above the claw, rising and falling with the sleeping crab's breath.
   if (!m.busy && !m.waiting) pixelGlyph(c, ['#####', '...#.', '..#..', '.#...', '#####'], 38, 2 + (Math.floor(f / 8) % 2) * 2)

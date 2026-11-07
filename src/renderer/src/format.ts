@@ -1,4 +1,4 @@
-import type { LimitWindow, Session, SessionStatus, TokenCounts } from '../../core/types'
+import type { Session, SessionStatus, TokenCounts } from '../../core/types'
 import type { TokenMetric } from '../../shared/types'
 
 export const tokenValue = (t: TokenCounts, metric: TokenMetric): number =>
@@ -33,15 +33,8 @@ export const formatDuration = (ms: number): string => {
   return mins < 60 ? `${mins}m` : `${Math.floor(mins / 60)}h ${String(mins % 60).padStart(2, '0')}m`
 }
 
-/** Time until a limit resets: "42m", "2h 22m", or "Sat 08:00" beyond a day. */
-export const formatReset = (window: LimitWindow | null | undefined, now: number): string => {
-  if (!window) return ''
-  if (!window.resetsAt) return window.resetsText.replace(/\s*\(.*\)$/, '')
-  const mins = Math.max(0, Math.round((window.resetsAt - now) / 60000))
-  if (mins < 60) return `${mins}m`
-  if (mins < 24 * 60) return `${Math.floor(mins / 60)}h ${String(mins % 60).padStart(2, '0')}m`
-  return new Date(window.resetsAt).toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit' })
-}
+// Shared with the main process's menu, so it lives in core.
+export { formatReset } from '../../core/forecast'
 
 /** Neutral below 60%, amber up to 85%, red above. */
 export const limitLevel = (percent: number): 'ok' | 'warn' | 'high' =>

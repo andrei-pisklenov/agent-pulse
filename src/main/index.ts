@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process'
 import { join } from 'node:path'
+import { formatReset } from '../core/forecast'
 import type { Session, Snapshot } from '../core/types'
 import {
   app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, Notification, screen, Tray, utilityProcess,
@@ -232,7 +233,17 @@ const buildMenu = (): Menu => {
     label, type: 'checkbox', checked: settings.features[key], click: () => setFeature(key, !settings.features[key]),
   })
   const limits = snapshot?.limits
+  const now = Date.now()
+  // Greyed info lines: "Weekly limit  88% · resets Sun 07:00".
+  const limitLines = ([['5-hour limit', limits?.session], ['Weekly limit', limits?.week]] as const)
+    .flatMap(([name, w]): MenuItemConstructorOptions[] => {
+      if (!w) return []
+      const soon = w.resetsAt !== null && w.resetsAt - now < 86_400_000
+      return [{ label: `${name}  ${w.percent}% · resets ${soon ? 'in ' : ''}${formatReset(w, now)}`, enabled: false }]
+    })
   const template: MenuItemConstructorOptions[] = [
+    ...limitLines,
+    ...(limitLines.length ? [{ type: 'separator' as const }] : []),
     ...attention.map(s => ({
       label: `${mark[s.status]}  ${s.title}`,
       sublabel: settings.features.pendingQuestion && s.pendingPrompt ? s.pendingPrompt : s.project,
