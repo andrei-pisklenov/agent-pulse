@@ -398,6 +398,9 @@ app.whenReady().then(() => {
     },
   })
   panel.create()
+  // Resizing, moving or hiding the Dock changes the work area; the pill follows it when matching the Dock.
+  screen.on('display-metrics-changed', () => panel.refreshDock())
+  screen.on('display-removed', () => panel.refreshDock())
 
   tray = new Tray(nativeImage.createEmpty())
   tray.setToolTip('Agent Pulse')

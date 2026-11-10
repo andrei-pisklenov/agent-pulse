@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { app } from 'electron'
-import { defaultSettings, type Edge, type Orientation, type Settings, type TrayText, type UsageProviders } from '../shared/types'
+import { COMPACT_SCALE, defaultSettings, type Edge, type Orientation, type Settings, type TrayText, type UsageProviders } from '../shared/types'
 
 /** Where the panel was left, per display. */
 export interface SavedPosition {
@@ -39,6 +39,8 @@ export const loadStored = (): Stored => {
     const trayTexts: TrayText[] = ['none', 'counts', 'countsAndSession']
     if (!trayTexts.includes(settings.trayText)) settings.trayText = defaultSettings.trayText
     settings.usageProviders = readUsageProviders(raw.settings?.usageProviders)
+    const scale = Number(settings.compactScale)
+    settings.compactScale = Number.isFinite(scale) ? Math.min(COMPACT_SCALE.max, Math.max(COMPACT_SCALE.min, scale)) : 1
     return { settings, position: raw.position ?? null }
   } catch {
     return { settings: { ...defaultSettings }, position: null }

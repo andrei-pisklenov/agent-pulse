@@ -71,7 +71,14 @@ export interface Settings {
   snapOverDock: boolean
   /** Square window corners instead of macOS's rounded ones. */
   squareCorners: boolean
+  /** Size the compact pill to the Dock's thickness; falls back to compactScale when the Dock hides. */
+  compactMatchDock: boolean
+  /** Size of the compact pill, 1 being the original; set with the slider in the panel. */
+  compactScale: number
 }
+
+/** Range of the compact-size slider. */
+export const COMPACT_SCALE = { min: 0.6, max: 1.8 } as const
 
 export const defaultSettings: Settings = {
   theme: 'glass',
@@ -95,6 +102,8 @@ export const defaultSettings: Settings = {
   snapGap: 0,
   snapOverDock: true,
   squareCorners: false,
+  compactMatchDock: true,
+  compactScale: 1,
 }
 
 /** Where the panel sits; owned by the main process. */
@@ -107,6 +116,8 @@ export interface PanelState {
   maxHeight: number
   /** The hotkey or menu asked for the full panel. */
   forceExpanded: boolean
+  /** Thickness (px) of the Dock on the panel's display; null when it is hidden or absent. */
+  dockSize: number | null
 }
 
 export interface PulseApi {

@@ -11,10 +11,12 @@ interface PillProps {
   orientation: Orientation
   now: number
   open: (id: string) => void
+  /** Zoom of the whole pill (sizes, gaps and text), from the compact-size setting. */
+  scale: number
 }
 
 /** Resting state: status counts and limit gauges; glows when a session needs input. */
-export const Pill = ({ sessions, gauges, theme, orientation, now, open }: PillProps) => {
+export const Pill = ({ sessions, gauges, theme, orientation, now, open, scale }: PillProps) => {
   const groups = groupSessions(sessions)
   const waiting = groups.waiting.filter(s => !s.snoozedUntil)
   const newest = [...waiting].sort((a, b) => b.statusSince - a.statusSince)[0]
@@ -26,7 +28,7 @@ export const Pill = ({ sessions, gauges, theme, orientation, now, open }: PillPr
   const labeled = gauges.some(gauge => gauge.provider === 'Codex')
 
   return (
-    <div className={`pill pill-${orientation} ${waiting.length ? 'pill-alert' : ''}`}>
+    <div className={`pill pill-${orientation} ${waiting.length ? 'pill-alert' : ''}`} style={{ zoom: scale }}>
       {gauges.map(({ provider, window, period }) => {
         const key = `${provider}-${period}`
         const percent = window?.percent ?? null

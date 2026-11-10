@@ -62,6 +62,7 @@ export const IconVertical = () => <svg {...iconProps}><rect x="4" y="1.5" width=
 export const IconPin = ({ on }: { on: boolean }) => (
   <svg {...iconProps} fill={on ? 'currentColor' : 'none'}><path d="M5 1.5h4l-.6 4 2.1 2H3.5l2.1-2zM7 7.5v5" /></svg>
 )
+export const IconSize = () => <svg {...iconProps}><path d="M2 4.5h10M2 9.5h10" /><circle cx="5" cy="4.5" r="1.5" fill="currentColor" stroke="none" /><circle cx="9" cy="9.5" r="1.5" fill="currentColor" stroke="none" /></svg>
 export const IconMenu = () => <svg {...iconProps}><circle cx="3" cy="7" r=".6" /><circle cx="7" cy="7" r=".6" /><circle cx="11" cy="7" r=".6" /></svg>
 export const IconSnooze = () => (
   <svg {...iconProps}><circle cx="7" cy="7.5" r="5" /><path d="M7 4.8v2.9l1.8 1.1M2.5 2.5l1.6-1M11.5 2.5l-1.6-1" /></svg>

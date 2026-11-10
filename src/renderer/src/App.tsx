@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type Pointer
 import { emptyTokens, type Snapshot } from '../../core/types'
 import { defaultSettings, type PanelState, type Settings } from '../../shared/types'
 import { displayedCodex, usageGauges } from '../../shared/usageDisplay'
+import { compactScale } from './CompactSize'
 import { Pill } from './Pill'
 import { Strip } from './Strip'
 import { useTrayIcon } from './useTrayIcon'
@@ -33,7 +34,7 @@ const useNow = (everyMs: number) => {
 export const App = () => {
   const [snapshot, setSnapshot] = useState(emptySnapshot)
   const [settings, setSettings] = useState<Settings>(defaultSettings)
-  const [panel, setPanel] = useState<PanelState>({ orientation: 'vertical', edges: [], maxWidth: 1200, maxHeight: 800, forceExpanded: false })
+  const [panel, setPanel] = useState<PanelState>({ orientation: 'vertical', edges: [], maxWidth: 1200, maxHeight: 800, forceExpanded: false, dockSize: null })
   const [hovered, setHovered] = useState(false)
   const [dragging, setDragging] = useState(false)
   const root = useRef<HTMLDivElement>(null)
@@ -124,7 +125,7 @@ export const App = () => {
       onMouseLeave={onLeave}
     >
       {!expanded
-        ? <Pill {...view} theme={settings.theme} orientation={panel.orientation} />
+        ? <Pill {...view} theme={settings.theme} orientation={panel.orientation} scale={compactScale(settings, panel)} />
         : panel.orientation === 'vertical'
           ? <VerticalPanel {...view} panel={panel} />
           : <Strip {...view} panel={panel} />}

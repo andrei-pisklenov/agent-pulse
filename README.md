@@ -42,6 +42,8 @@ Click a row to jump to that session. Desktop sessions open in the Claude app, VS
 
 At rest the panel shrinks to a small pill showing your limits and the three counts. Hover over it to see everything. Drag it anywhere: it snaps to screen edges and corners, and it stands upright on the sides.
 
+While the Dock is showing, the pill matches its size by default, so it lines up with the Dock's icons and follows when you resize the Dock. To pick a size yourself, open the panel, click the sliders button and drag the slider; a preview shows the pill as you go.
+
 <p align="center">
   <img src="docs/media/pill.png" alt="The panel at rest: a slim pill on the right edge with two limit rings (42 and 63 percent) and counts of 1 waiting, 2 running and 1 finished." width="260">
 </p>

@@ -22,6 +22,19 @@ export interface PanelOptions {
  * the window follows it, growing away from the screen edge it is snapped to. Dragging is done
  * here (the renderer only says when a drag starts and ends) so hover and clicks keep working.
  */
+/** Below this a Dock inset is the 4 px strip an auto-hidden Dock leaves, not a Dock. */
+const MIN_DOCK = 16
+
+/** The Dock's thickness: the room macOS keeps for it at the left, right or bottom of the display. */
+const dockSize = ({ bounds, workArea }: Display): number | null => {
+  const size = Math.max(
+    workArea.x - bounds.x,
+    bounds.x + bounds.width - (workArea.x + workArea.width),
+    bounds.y + bounds.height - (workArea.y + workArea.height),
+  )
+  return size >= MIN_DOCK ? size : null
+}
+
 /** The menu-bar extras' window level: above the Dock (which covers 'floating' windows), still below menus and notifications. */
 const TOP_LEVEL = 'status'
 
@@ -57,6 +70,7 @@ export class Panel {
       maxWidth: wa.width - 2 * this.gap,
       maxHeight: wa.height - 2 * this.gap,
       forceExpanded: false,
+      dockSize: dockSize(display),
     }
   }
 
@@ -152,6 +166,12 @@ export class Panel {
     this.setSnapGap(this.gap)
   }
 
+  /** Picks up a Dock that was resized, moved or hidden, or a panel that moved to another display. */
+  refreshDock(): void {
+    const size = this.window ? dockSize(screen.getDisplayMatching(this.window.getBounds())) : this.state.dockSize
+    if (size !== this.state.dockSize) this.update({ dockSize: size })
+  }
+
   setForceExpanded(on: boolean): void {
     this.update({ forceExpanded: on })
   }
@@ -233,6 +253,7 @@ export class Panel {
       orientation: this.forcedOrientation() ?? this.orientationForEdges(edges),
       maxWidth: wa.width - 2 * this.gap,
       maxHeight: wa.height - 2 * this.gap,
+      dockSize: dockSize(display),
     })
     const final = win.getBounds()
     this.options.onMoved({
