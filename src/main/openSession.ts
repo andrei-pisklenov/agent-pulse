@@ -72,6 +72,10 @@ const activateOwningApp = async (pid: number): Promise<boolean> => {
 
 /** Opens a session where it lives: the desktop app, VS Code or its terminal. */
 export const openSession = async (session: Session): Promise<void> => {
+  if (session.source === 'codex') {
+    await shell.openExternal(`codex://threads/${encodeURIComponent(session.id.slice('codex:'.length))}`)
+    return
+  }
   if (session.hostSessionId) {
     // `continue` opens any session by id; `needs-input` only finds sessions waiting on a permission
     // prompt and otherwise falls back to another session or a new one.

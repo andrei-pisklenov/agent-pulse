@@ -1,18 +1,18 @@
 import { useEffect, useMemo, useRef } from 'react'
-import type { Snapshot } from '../../core/types'
+import type { Session } from '../../core/types'
 import type { CrabDance, TrayIcon } from '../../shared/types'
+import type { UsageGauge } from '../../shared/usageDisplay'
 import { drawTrayIcon, isAnimated, type TrayMood } from './trayIcon'
 
 const FPS = 8
 
 /** Keeps the menu-bar icon in sync with the snapshot, animating it while something is going on. */
-export const useTrayIcon = (icon: TrayIcon, dance: CrabDance, snapshot: Snapshot) => {
-  const s = snapshot.sessions
+export const useTrayIcon = (icon: TrayIcon, dance: CrabDance, s: Session[], gauges: UsageGauge[]) => {
   const busy = s.filter(x => x.status === 'busy').length
   const waiting = s.filter(x => x.status === 'waiting' && !x.snoozedUntil).length
   const finished = s.filter(x => x.status === 'finished').length
-  const sessionPercent = snapshot.limits?.session?.percent ?? null
-  const weekPercent = snapshot.limits?.week?.percent ?? null
+  const sessionPercent = gauges[0]?.window?.percent ?? null
+  const weekPercent = gauges[1]?.window?.percent ?? null
   const mood = useMemo<TrayMood>(
     () => ({ busy, waiting, finished, sessionPercent, weekPercent }),
     [busy, waiting, finished, sessionPercent, weekPercent],

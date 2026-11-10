@@ -1,4 +1,4 @@
-export type SessionSource = 'desktop' | 'vscode' | 'cli'
+export type SessionSource = 'desktop' | 'vscode' | 'cli' | 'codex'
 
 /** Raw status Claude Code writes to ~/.claude/sessions/<pid>.json. */
 export type RawStatus = 'busy' | 'waiting' | 'idle'
@@ -17,7 +17,7 @@ export interface TokenCounts {
 }
 
 export interface Session {
-  /** Stable key: the CLI session id. */
+  /** Stable key: the Claude session id or a prefixed Codex thread id. */
   id: string
   pid: number | null
   source: SessionSource
@@ -38,7 +38,7 @@ export interface Session {
   /** Desktop app session id (`local_…`), when the session belongs to the desktop app. */
   hostSessionId: string | null
   model: string | null
-  tokens: TokenCounts
+  tokens: TokenCounts | null
 }
 
 export interface LimitWindow {
@@ -65,6 +65,16 @@ export interface UsageTotals {
   week: TokenCounts
 }
 
+export interface CodexLimitWindow extends LimitWindow {
+  durationMinutes: number
+}
+
+export interface CodexUsage {
+  windows: CodexLimitWindow[]
+  dailyTokens: { date: string, tokens: number }[] | null
+  limitError: string | null
+}
+
 /** How long sessions sat waiting for the user today (finished waits plus the ones still open). */
 export interface AttentionStats {
   blockedMs: number
@@ -78,6 +88,8 @@ export interface Snapshot {
   totals: UsageTotals
   attention: AttentionStats
   generatedAt: number
+  /** Populated by the worker when a Codex CLI is available. */
+  codex?: CodexUsage
 }
 
 export const emptyTokens = (): TokenCounts => ({ input: 0, output: 0, cacheWrite: 0, cacheRead: 0 })

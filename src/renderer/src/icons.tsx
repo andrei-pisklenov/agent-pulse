@@ -73,24 +73,33 @@ export const IconChevron = ({ open }: { open: boolean }) => (
 )
 
 /** Small ring gauge for the pill. */
-export const Ring = ({ percent, size = 26, level }: { percent: number, size?: number, level: string }) => {
+export const Ring = ({ percent, size = 26, level, labeled = false }: {
+  percent: number | null
+  size?: number
+  level: string
+  labeled?: boolean
+}) => {
   const r = 11
   const c = 2 * Math.PI * r
   return (
-    <svg width={size} height={size} viewBox="0 0 28 28" role="img" aria-label={`${percent}%`}>
+    <svg width={size} height={size} viewBox="0 0 28 28" role="img" aria-label={percent === null ? 'Unavailable' : `${percent}% used`}>
       <circle cx="14" cy="14" r={r} fill="none" stroke="var(--track)" strokeWidth="3" />
-      <circle
-        cx="14"
-        cy="14"
-        r={r}
-        fill="none"
-        stroke={`var(--lvl-${level})`}
-        strokeWidth="3"
-        strokeDasharray={`${(c * percent) / 100} ${c}`}
-        strokeLinecap="round"
-        transform="rotate(-90 14 14)"
-      />
-      <text x="14" y="17.5" textAnchor="middle" fontSize="9" fontWeight="700" fill={`var(--lvl-${level}-text)`}>{percent}</text>
+      {percent !== null && percent > 0 && (
+        <circle
+          cx="14"
+          cy="14"
+          r={r}
+          fill="none"
+          stroke={`var(--provider-color, var(--lvl-${level}))`}
+          strokeWidth="3"
+          strokeDasharray={`${(c * percent) / 100} ${c}`}
+          strokeLinecap="round"
+          transform="rotate(-90 14 14)"
+        />
+      )}
+      <text x="14" y={labeled ? '16.5' : '17.5'} textAnchor="middle" fontSize={labeled ? '7' : '9'} fontWeight="700" fill={`var(--lvl-${level}-text)`}>
+        {percent === null ? '–' : labeled ? `${percent}%` : percent}
+      </text>
     </svg>
   )
 }

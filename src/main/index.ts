@@ -6,7 +6,8 @@ import {
   app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, Notification, screen, Tray, utilityProcess,
   type MenuItemConstructorOptions, type UtilityProcess,
 } from 'electron'
-import { CRAB_DANCES, IPC, RUNNING_MARK, type Features, type FromWorker, type Settings, type ToWorker } from '../shared/types'
+import { CRAB_DANCES, IPC, RUNNING_MARK, type Features, type FromWorker, type Settings, type ToWorker, type UsageProviders } from '../shared/types'
+import { displayedCodex, formatLimitWindow, usageGauges } from '../shared/usageDisplay'
 import { openSession } from './openSession'
 import { Panel } from './panel'
 import { loadStored, saveStored, type SavedPosition } from './settings'
@@ -41,7 +42,8 @@ const needsYou = (s: Session) => s.status === 'waiting' && !s.snoozedUntil
 const startWorker = () => {
   worker = utilityProcess.fork(join(__dirname, 'worker.js'), [], {
     serviceName: 'Agent Pulse collector',
-    env: { ...process.env, PULSE_USER_DATA: app.getPath('userData') },
+    // The providers go in the environment too, so the first limits probe already skips a disabled one.
+    env: { ...process.env, PULSE_USER_DATA: app.getPath('userData'), PULSE_USAGE_PROVIDERS: JSON.stringify(settings.usageProviders) },
   })
   worker.on('message', (message: FromWorker) => {
     if (message.type === 'snapshot') onSnapshot(message.snapshot)
@@ -51,8 +53,11 @@ const startWorker = () => {
     worker = null
     if (!quitting) setTimeout(startWorker, 2000)
   })
-  toWorker({ type: 'configure', limitsRefreshMinutes: settings.limitsRefreshMinutes })
+  configureWorker()
 }
+
+const configureWorker = () =>
+  toWorker({ type: 'configure', limitsRefreshMinutes: settings.limitsRefreshMinutes, usageProviders: settings.usageProviders })
 
 const playSound = (name: 'Ping' | 'Glass') => {
   if (settings.sound) execFile('/usr/bin/afplay', [`/System/Library/Sounds/${name}.aiff`], () => undefined)
@@ -102,7 +107,7 @@ const open = async (id: string) => {
 
 const updateTrayTitle = () => {
   const sessions = snapshot?.sessions ?? []
-  const pct = snapshot?.limits?.session?.percent
+  const gauges = usageGauges(settings.usageProviders, { limits: snapshot?.limits ?? null, codex: snapshot?.codex })
   const text = settings.trayText
   const parts: string[] = []
   if (settings.trayIcon === 'text') parts.push('◆')
@@ -115,7 +120,14 @@ const updateTrayTitle = () => {
     ] as const
     for (const [mark, n] of counts) if (n) parts.push(`${mark}${n}`)
   }
-  if ((text === 'countsAndSession' || settings.trayIcon === 'text') && pct !== undefined) parts.push(`${pct}%`)
+  if (text === 'countsAndSession' || settings.trayIcon === 'text') {
+    const providers = new Set(gauges.map(gauge => gauge.provider))
+    for (const provider of providers) {
+      const own = gauges.filter(gauge => gauge.provider === provider)
+      const gauge = own.find(g => g.period === '5h' && g.window) ?? own.find(g => g.window)
+      if (gauge?.window) parts.push(`${providers.size > 1 ? `${provider} ` : ''}${gauge.window.percent}%`)
+    }
+  }
   tray.setTitle(parts.length ? ` ${parts.join(' ')}` : '', { fontType: 'monospacedDigit' })
 }
 
@@ -144,8 +156,8 @@ const applySettings = (patch: Partial<Settings>) => {
   if (settings.hotkey !== before.hotkey || settings.panelHotkey !== before.panelHotkey
     || settings.features.quickSwitcher !== before.features.quickSwitcher) registerHotkeys()
   if (settings.launchAtLogin !== before.launchAtLogin) syncLoginItem()
-  if (settings.limitsRefreshMinutes !== before.limitsRefreshMinutes) {
-    toWorker({ type: 'configure', limitsRefreshMinutes: settings.limitsRefreshMinutes })
+  if (settings.limitsRefreshMinutes !== before.limitsRefreshMinutes || settings.usageProviders !== before.usageProviders) {
+    configureWorker()
   }
   broadcast(IPC.settings, settings)
   updateTrayTitle()
@@ -232,15 +244,28 @@ const buildMenu = (): Menu => {
   const feature = (key: keyof Features, label: string): MenuItemConstructorOptions => ({
     label, type: 'checkbox', checked: settings.features[key], click: () => setFeature(key, !settings.features[key]),
   })
-  const limits = snapshot?.limits
+  const provider = (key: keyof UsageProviders, label: string): MenuItemConstructorOptions => ({
+    label, type: 'checkbox', checked: settings.usageProviders[key],
+    click: () => applySettings({ usageProviders: { ...settings.usageProviders, [key]: !settings.usageProviders[key] } }),
+  })
+  const showClaude = settings.usageProviders.claude
+  const limits = showClaude ? snapshot?.limits : null
+  const codex = displayedCodex(settings.usageProviders, snapshot?.codex)
   const now = Date.now()
   // Greyed info lines: "Weekly limit  88% · resets Sun 07:00".
-  const limitLines = ([['5-hour limit', limits?.session], ['Weekly limit', limits?.week]] as const)
+  const claudePrefix = codex ? 'Claude ' : ''
+  const limitLines = [
+    [`${claudePrefix}5-hour limit`, limits?.session] as const,
+    [`${claudePrefix}Weekly limit`, limits?.week] as const,
+    ...codex?.windows.map(window => [`Codex ${formatLimitWindow(window.durationMinutes)} limit`, window] as const) ?? [],
+  ]
     .flatMap(([name, w]): MenuItemConstructorOptions[] => {
       if (!w) return []
       const soon = w.resetsAt !== null && w.resetsAt - now < 86_400_000
-      return [{ label: `${name}  ${w.percent}% · resets ${soon ? 'in ' : ''}${formatReset(w, now)}`, enabled: false }]
+      const reset = formatReset(w, now)
+      return [{ label: `${name}  ${w.percent}%${reset ? ` · resets ${soon ? 'in ' : ''}${reset}` : ''}`, enabled: false }]
     })
+  if (codex?.limitError) limitLines.push({ label: codex.limitError, enabled: false })
   const template: MenuItemConstructorOptions[] = [
     ...limitLines,
     ...(limitLines.length ? [{ type: 'separator' as const }] : []),
@@ -324,6 +349,13 @@ const buildMenu = (): Menu => {
       ],
     },
     {
+      label: 'Usage providers',
+      submenu: [
+        provider('claude', 'Claude'),
+        provider('codex', 'Codex'),
+      ],
+    },
+    {
       label: 'Token counts',
       submenu: [
         radio('tokenMetric', 'noCacheRead', 'Input + output + cache writes'),
@@ -337,7 +369,8 @@ const buildMenu = (): Menu => {
     { ...check('launchAtLogin', 'Launch at login'), enabled: app.isPackaged, sublabel: app.isPackaged ? undefined : 'packaged app only' },
     { type: 'separator' },
     {
-      label: limits?.error ? `Refresh limits (last: ${limits.error})` : 'Refresh limits now',
+      label: limits?.error || codex?.limitError ? `Refresh limits (last: ${limits?.error ?? codex?.limitError})` : 'Refresh limits now',
+      enabled: settings.usageProviders.claude || settings.usageProviders.codex,
       click: () => toWorker({ type: 'refreshLimits' }),
     },
     { label: 'Quit Agent Pulse', accelerator: 'Command+Q', click: () => app.quit() },

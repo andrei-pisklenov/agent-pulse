@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from 'react'
 import { emptyTokens, type Snapshot } from '../../core/types'
 import { defaultSettings, type PanelState, type Settings } from '../../shared/types'
+import { displayedCodex, usageGauges } from '../../shared/usageDisplay'
 import { Pill } from './Pill'
 import { Strip } from './Strip'
 import { useTrayIcon } from './useTrayIcon'
@@ -40,7 +41,8 @@ export const App = () => {
   const suppressClick = useRef(false)
   const leaveTimer = useRef<number | undefined>(undefined)
   const now = useNow(15_000)
-  useTrayIcon(settings.trayIcon, settings.crabDance, snapshot)
+  const gauges = usageGauges(settings.usageProviders, snapshot)
+  useTrayIcon(settings.trayIcon, settings.crabDance, snapshot.sessions, gauges)
 
   useEffect(() => {
     const offs = [api.onSnapshot(setSnapshot), api.onSettings(setSettings), api.onPanelState(setPanel)]
@@ -102,7 +104,12 @@ export const App = () => {
   const open = useCallback((id: string) => api.openSession(id), [])
 
   const expanded = !settings.collapseToPill || hovered || dragging || panel.forceExpanded
-  const view = { ...snapshot, attention: snapshot.attention ?? emptySnapshot.attention, settings, now, open }
+  const view = {
+    ...snapshot,
+    codex: displayedCodex(settings.usageProviders, snapshot.codex),
+    attention: snapshot.attention ?? emptySnapshot.attention,
+    gauges, settings, now, open,
+  }
 
   return (
     <div

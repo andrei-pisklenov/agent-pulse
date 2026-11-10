@@ -1,14 +1,18 @@
 import { forecastLimit, SESSION_WINDOW_MS, WEEK_WINDOW_MS } from '../../core/forecast'
-import type { AttentionStats, LimitWindow, Limits, Session, UsageTotals } from '../../core/types'
+import type { AttentionStats, CodexUsage, LimitWindow, Limits, Session, UsageTotals } from '../../core/types'
 import type { Settings } from '../../shared/types'
+import { formatLimitWindow, type UsageGauge } from '../../shared/usageDisplay'
 import {
-  formatAge, formatClock, formatDuration, formatReset, formatTokens, limitLevel, shortModel, sourceLabel, statusLabel, tokenValue,
+  formatAge, formatClock, formatDuration, formatReset, formatTokens,
+  limitLevel, shortModel, sourceLabel, statusLabel, tokenValue,
 } from './format'
 import { IconClose, IconSnooze, SourceIcon, StatusIcon } from './icons'
 
 export interface ViewProps {
   sessions: Session[]
   limits: Limits | null
+  codex?: CodexUsage
+  gauges: UsageGauge[]
   totals: UsageTotals
   attention: AttentionStats
   settings: Settings
@@ -33,8 +37,18 @@ export const LimitBars = ({ limits, now, compact, pace }: { limits: Limits | nul
     { label: compact ? '5h' : 'Session', window: limits?.session, length: SESSION_WINDOW_MS },
     { label: compact ? 'wk' : 'Week', window: limits?.week, length: WEEK_WINDOW_MS },
   ]
+  return <LimitGrid rows={rows} now={now} compact={compact} pace={pace} error={limits?.error} />
+}
+
+const LimitGrid = ({ rows, now, compact, pace, error }: {
+  rows: { label: string, window: LimitWindow | null | undefined, length: number }[]
+  now: number
+  compact?: boolean
+  pace?: boolean
+  error?: string | null
+}) => {
   return (
-    <div className={compact ? 'limits limits-compact' : 'limits'} title={limits?.error ? `Last refresh failed: ${limits.error}` : undefined}>
+    <div className={compact ? 'limits limits-compact' : 'limits'} title={error ? `Last refresh failed: ${error}` : undefined}>
       {rows.map(({ label, window, length }) => {
         const level = window ? limitLevel(window.percent) : 'ok'
         const forecast = pace ? paceOf(window, length, now) : null
@@ -46,7 +60,7 @@ export const LimitBars = ({ limits, now, compact, pace }: { limits: Limits | nul
               {window ? `${window.percent}%` : '–'}
               {compact && forecast?.warn && <span className="pace-warn"> ⚠</span>}
             </span>
-            <span className="muted num">{window ? `↻ ${formatReset(window, now)}` : ''}</span>
+            <span className="limit-reset muted num">{window && formatReset(window, now) ? `↻ ${formatReset(window, now)}` : ''}</span>
             {!compact && forecast && <span className={`pace ${forecast.warn ? 'pace-warn' : 'muted'}`}>{forecast.text}</span>}
           </div>
         )
@@ -55,24 +69,55 @@ export const LimitBars = ({ limits, now, compact, pace }: { limits: Limits | nul
   )
 }
 
-export const Totals = ({ totals, attention, settings }: { totals: UsageTotals, attention: AttentionStats, settings: Settings }) => (
-  <div className="totals muted num">
-    <div className="totals-row">
-      <span>Today {formatTokens(tokenValue(totals.today, settings.tokenMetric))} tok</span>
-      <span>This week {formatTokens(tokenValue(totals.week, settings.tokenMetric))} tok</span>
+export const CodexLimitBars = ({ codex, now, compact }: { codex: CodexUsage, now: number, compact?: boolean }) => {
+  const rows = codex.windows.map(window => ({
+    label: window.durationMinutes === 10080 ? 'Week' : formatLimitWindow(window.durationMinutes),
+    length: window.durationMinutes * 60_000,
+    window,
+  }))
+  return rows.length
+    ? <LimitGrid rows={rows} now={now} compact={compact} />
+    : <div className="provider-unavailable muted">{codex.limitError ?? 'Limits unavailable'}</div>
+}
+
+const CodexTotals = ({ codex, now }: { codex: CodexUsage, now: number }) => {
+  const today = new Date(now).toISOString().slice(0, 10)
+  const from = new Date(now - 6 * 86_400_000).toISOString().slice(0, 10)
+  const days = codex.dailyTokens?.filter(({ date }) => date >= from && date <= today) ?? []
+  const todayTokens = days.find(({ date }) => date === today)?.tokens
+  const weekTokens = days.reduce((sum, { tokens }) => sum + tokens, 0)
+  return (
+    <div className="totals-row" title="Codex account tokens across devices. Dates use UTC.">
+      <span>Codex account</span>
+      <span>{days.length ? `Today ${todayTokens === undefined ? '–' : formatTokens(todayTokens)} · 7d ${formatTokens(weekTokens)} tok` : 'Token data unavailable'}</span>
     </div>
-    {settings.features.blockedTime && attention.waits > 0 && (
-      <div className="totals-row" title={`${attention.waits} times a session waited for you today`}>
-        <span>Waited on you {formatDuration(attention.blockedMs)} today</span>
-        <span>longest {formatDuration(attention.longestMs)}</span>
-      </div>
-    )}
-  </div>
-)
+  )
+}
+
+export const Totals = ({ totals, attention, settings, codex, now }: Pick<ViewProps, 'totals' | 'attention' | 'settings' | 'codex' | 'now'>) => {
+  if (!settings.usageProviders.claude && !codex) return null
+  return (
+    <div className="totals muted num">
+      {settings.usageProviders.claude && (
+        <div className="totals-row">
+          <span>{codex ? 'Claude today' : 'Today'} {formatTokens(tokenValue(totals.today, settings.tokenMetric))} tok</span>
+          <span>This week {formatTokens(tokenValue(totals.week, settings.tokenMetric))} tok</span>
+        </div>
+      )}
+      {codex && <CodexTotals codex={codex} now={now} />}
+      {settings.usageProviders.claude && settings.features.blockedTime && attention.waits > 0 && (
+        <div className="totals-row" title={`${attention.waits} times a session waited for you today`}>
+          <span>Waited on you {formatDuration(attention.blockedMs)} today</span>
+          <span>longest {formatDuration(attention.longestMs)}</span>
+        </div>
+      )}
+    </div>
+  )
+}
 
 /** Compact "waited 49m" for strips. */
 export const BlockedBadge = ({ attention, settings }: { attention: AttentionStats, settings: Settings }) =>
-  settings.features.blockedTime && attention.waits > 0
+  settings.usageProviders.claude && settings.features.blockedTime && attention.waits > 0
     ? <span className="muted num nowrap blocked" title={`Sessions waited on you ${formatDuration(attention.blockedMs)} today (longest ${formatDuration(attention.longestMs)})`}>⏳{formatDuration(attention.blockedMs)}</span>
     : null
 
@@ -81,7 +126,9 @@ const tooltip = (s: Session, settings: Settings) => [
   `${statusLabel[s.status]}${s.waitingFor ? `: ${s.waitingFor}` : ''}`,
   ...(settings.features.pendingQuestion && s.pendingPrompt ? [`“${s.pendingPrompt}”`] : []),
   `${s.project} · ${sourceLabel[s.source]}${shortModel(s.model) ? ` · ${shortModel(s.model)}` : ''}`,
-  `${formatTokens(tokenValue(s.tokens, settings.tokenMetric))} tokens (${formatTokens(s.tokens.cacheRead)} cache reads)`,
+  ...(s.tokens && settings.usageProviders.claude
+    ? [`${formatTokens(tokenValue(s.tokens, settings.tokenMetric))} tokens (${formatTokens(s.tokens.cacheRead)} cache reads)`]
+    : []),
 ].join('\n')
 
 const SnoozeButton = ({ s, now }: { s: Session, now: number }) => {
@@ -121,7 +168,8 @@ export const SessionRow = ({ s, settings, now, open }: RowProps) => {
   const age = s.status === 'waiting'
     ? (snoozed ? `snoozed · ${formatDuration(s.snoozedUntil! - now)} left` : `waiting ${formatAge(s.statusSince, now)}`)
     : s.status === 'busy' ? formatAge(s.startedAt, now) : `${formatAge(s.statusSince, now)} ago`
-  const tokens = formatTokens(tokenValue(s.tokens, settings.tokenMetric))
+  const tokens = s.tokens && settings.usageProviders.claude ? formatTokens(tokenValue(s.tokens, settings.tokenMetric)) : '–'
+  const sourceTag = s.source === 'codex' ? 'Codex' : s.source === 'vscode' ? 'vsc' : 'tty'
   const ask = settings.features.pendingQuestion && s.status === 'waiting' ? s.pendingPrompt : null
   const action = settings.features.pendingQuestion && s.status === 'waiting' ? <SnoozeButton s={s} now={now} /> : <DismissButton s={s} />
   const classes = `st-row-${s.status} ${snoozed ? 'st-row-snoozed' : ''}`
@@ -132,7 +180,7 @@ export const SessionRow = ({ s, settings, now, open }: RowProps) => {
         <button className={`row row-compact ${classes}`} onClick={() => open(s.id)} title={tooltip(s, settings)}>
           <StatusIcon status={s.status} theme={settings.theme} size={14} />
           <span className="ttl">
-            {s.source !== 'desktop' && <span className="muted src-tag">{s.source === 'vscode' ? 'vsc' : 'tty'} </span>}
+            {s.source !== 'desktop' && <span className="muted src-tag">{sourceTag} </span>}
             {s.title}
           </span>
           <span className="muted num right">{formatAge(s.statusSince, now)}</span>
@@ -175,8 +223,13 @@ export const SessionDetail = ({ s, settings, now, open }: RowProps) => {
       <div className="muted detail-meta">
         {s.project} · {sourceLabel[s.source]}{shortModel(s.model) ? ` · ${shortModel(s.model)}` : ''}
         <br />
-        {formatTokens(tokenValue(s.tokens, settings.tokenMetric))} tokens · {formatTokens(s.tokens.output)} out
-        {' · '}{formatTokens(s.tokens.cacheRead)} cache reads · started {formatAge(s.startedAt, now)} ago
+        {s.tokens && settings.usageProviders.claude && (
+          <>
+            {formatTokens(tokenValue(s.tokens, settings.tokenMetric))} tokens · {formatTokens(s.tokens.output)} out
+            {' · '}{formatTokens(s.tokens.cacheRead)} cache reads ·{' '}
+          </>
+        )}
+        started {formatAge(s.startedAt, now)} ago
       </div>
       {(ask ?? s.waitingFor) && <div className="detail-quote">{ask ?? s.waitingFor}</div>}
       <div className="detail-actions">

@@ -49,6 +49,7 @@ export const statusLabel: Record<SessionStatus, string> = {
 }
 
 export const sourceLabel: Record<Session['source'], string> = {
+  codex: 'Codex',
   desktop: 'Desktop app',
   vscode: 'VS Code',
   cli: 'Terminal',

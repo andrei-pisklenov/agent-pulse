@@ -29,8 +29,11 @@ It takes a few minutes, most of them spent downloading Electron. To do it by han
 ## What it shows
 
 - **Every session in one place.** Terminal `claude`, the Claude desktop app (Code tab) and the VS Code extension, grouped by what they need from you: *needs input*, *running*, *finished* (until you open it) and *idle*. Desktop sessions that ended in the last 24 hours are listed too.
+- **Running Codex tasks.** Active turns from Codex Desktop appear under **Running**. Click a Codex row to open its chat.
 - **What a waiting session is asking.** The question or the permission it needs, read from the end of its transcript. If it can wait, snooze it for 15 minutes.
 - **Your plan limits.** The 5-hour session and weekly bars with their reset times, plus a pace forecast such as "runs out Thu 11:40" or "~84% at reset".
+- **Codex in the vertical panel.** When a Codex CLI is available, the collapsed pill shows one limit for Claude and one for Codex. It prefers the 5-hour window and labels the fallback with its actual duration. Hover to see both providers’ available limits and reset times, plus Codex account token totals when available.
+- **Usage providers.** Tick **Claude**, **Codex**, both or neither under **Usage providers** in the panel or menu bar menu. Unticked providers' limits and token counts are hidden and not fetched at all. Both are on by default, and the session list always shows every session.
 - **Tokens and waiting time.** Tokens per session, today and this week, and how long sessions waited on you today.
 
 Click a row to jump to that session. Desktop sessions open in the Claude app, VS Code sessions in VS Code, and terminal sessions bring their Terminal or iTerm tab to the front.
@@ -90,7 +93,7 @@ You can also make rows compact, switch the strip to status segments or a thin ti
 
 ## How it works
 
-Everything stays on your Mac. Agent Pulse only reads files that Claude Code and the Claude app already keep up to date, and it asks Claude Code itself for your plan limits.
+Agent Pulse reads the files Claude Code and the Claude app already keep up to date. It asks each CLI for that provider’s plan limits.
 
 ```mermaid
 flowchart LR
@@ -98,6 +101,7 @@ flowchart LR
   transcripts["~/.claude/projects<br/>transcripts: tokens, pending questions"] --> collector
   desktop["Claude desktop app<br/>session titles, last opened"] --> collector
   usage["claude /usage<br/>in a hidden terminal, every 5 min"] --> collector
+  codex["codex app-server<br/>account limits and token totals"] --> collector
   collector["Collector<br/>background process"] --> panel["Panel"]
   collector --> tray["Menu-bar icon"]
 ```
@@ -105,13 +109,15 @@ flowchart LR
 | What | Where it comes from |
 | --- | --- |
 | Live status | `~/.claude/sessions/<pid>.json`, which every running Claude Code process writes (`busy` / `waiting` / `idle`) |
+| Running Codex tasks | Reads thread titles and turn status from the local Codex Desktop databases. A turn with no recorded activity for 30 minutes drops off the list to clear entries left behind by an interrupted app. |
 | Desktop titles, "opened since finished" | `~/Library/Application Support/Claude/claude-code-sessions/**/local_*.json` |
 | Tokens | `message.usage` in `~/.claude/projects/**/*.jsonl`, read incrementally; subagents count toward their parent |
 | Plan limits | Starts `claude` in a hidden pseudo-terminal, types `/usage` and reads the screen. It uses Claude Code's own sign-in, spends no model tokens and writes no transcript. |
+| Codex plan limits and usage | Uses the installed Codex CLI (including the one bundled in the ChatGPT app when available) and its existing sign-in. It asks for the main Codex quota and account token totals on the limit refresh schedule. |
 
 Token counts leave out cache reads by default, because they dwarf everything else. Switch this under **Token counts** in the menu.
 
-**Privacy:** nothing leaves your Mac. The app makes no network requests of its own. It only reads Claude's files, and the only files it writes are its own settings and state, under `~/Library/Application Support/agent-pulse`.
+**Privacy:** Claude transcripts and local token counts stay on your Mac. The Codex CLI contacts OpenAI to read account limits and aggregate token usage, which can include usage from other devices. Agent Pulse does not read Codex credentials or send conversation content.
 
 ## Install
 

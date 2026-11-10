@@ -6,6 +6,11 @@ export type Orientation = 'vertical' | 'horizontal'
 export type HorizontalStyle = 'chips' | 'segments' | 'ticker'
 export type Density = 'comfortable' | 'compact'
 export type TokenMetric = 'noCacheRead' | 'all'
+/** Which providers' plan limits and token usage are shown (and probed); any mix, including neither. */
+export interface UsageProviders {
+  claude: boolean
+  codex: boolean
+}
 export type Edge = 'top' | 'bottom' | 'left' | 'right'
 export type TrayIcon = 'crab' | 'octopus' | 'heartbeat' | 'rings' | 'spark' | 'bars' | 'text'
 /** The running mark next to counts: a full-size play triangle (▸ is too small in the menu-bar font), forced to text style. */
@@ -53,6 +58,7 @@ export interface Settings {
   panelHotkey: string
   features: Features
   tokenMetric: TokenMetric
+  usageProviders: UsageProviders
   limitsRefreshMinutes: number
   trayIcon: TrayIcon
   /** How the crab icon moves while sessions run. */
@@ -81,6 +87,7 @@ export const defaultSettings: Settings = {
   panelHotkey: 'Control+Alt+P',
   features: { paceForecast: true, pendingQuestion: true, blockedTime: true, quickSwitcher: true },
   tokenMetric: 'noCacheRead',
+  usageProviders: { claude: true, codex: true },
   limitsRefreshMinutes: 5,
   trayIcon: 'crab',
   crabDance: 'walk',
@@ -143,6 +150,6 @@ export type ToWorker
   = | { type: 'markRead', id: string }
     | { type: 'refreshLimits' }
     | { type: 'snooze', id: string, until: number | null }
-    | { type: 'configure', limitsRefreshMinutes: number }
+    | { type: 'configure', limitsRefreshMinutes: number, usageProviders: UsageProviders }
 
 export type FromWorker = { type: 'snapshot', snapshot: Snapshot }

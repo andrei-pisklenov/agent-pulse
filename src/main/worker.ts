@@ -5,7 +5,11 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Collector, probeUsage, type CollectorState } from '../core'
-import type { FromWorker, ToWorker } from '../shared/types'
+import { readCodexSessions } from '../core/codexSessions'
+import { probeCodexUsage } from '../core/codexUsage'
+import { compareSessions } from '../core/status'
+import type { CodexUsage, Session } from '../core/types'
+import { defaultSettings, type FromWorker, type ToWorker, type UsageProviders } from '../shared/types'
 
 const SESSIONS_MS = 1500
 const SLOW_MS = 10_000
@@ -13,6 +17,14 @@ const SLOW_MS = 10_000
 const userData = process.env.PULSE_USER_DATA ?? process.cwd()
 const probeDir = join(userData, 'probe')
 const statePath = join(userData, 'state.json')
+
+const initialProviders = (): UsageProviders => {
+  try {
+    return { ...defaultSettings.usageProviders, ...JSON.parse(process.env.PULSE_USAGE_PROVIDERS ?? '{}') as Partial<UsageProviders> }
+  } catch {
+    return defaultSettings.usageProviders
+  }
+}
 
 const port = process.parentPort
 const post = (message: FromWorker) => port.postMessage(message)
@@ -32,11 +44,18 @@ const main = async () => {
   let limitsEveryMs = 5 * 60_000
   let limitsTimer: NodeJS.Timeout | undefined
   let probing = false
+  /** A refresh was asked for while a probe ran; run another when it ends. */
+  let again = false
+  let providers = initialProviders()
   let lastJson = ''
   let lastState = ''
+  let codex: CodexUsage | null = null
+  let codexSessions: Session[] = []
 
   const publish = async () => {
-    const snapshot = collector.snapshot()
+    const local = collector.snapshot()
+    const sessions = [...local.sessions, ...codexSessions].sort(compareSessions)
+    const snapshot = { ...local, sessions, ...(codex ? { codex } : {}) }
     // generatedAt changes every time; compare the rest.
     const json = JSON.stringify({ ...snapshot, generatedAt: 0 })
     if (json !== lastJson) {
@@ -51,21 +70,38 @@ const main = async () => {
   }
 
   const refreshLimits = async () => {
-    clearTimeout(limitsTimer)
-    if (!probing) {
-      probing = true
-      try {
-        collector.setLimits(await probeUsage({ cwd: probeDir }))
-        await publish()
-      } finally {
-        probing = false
-      }
+    if (probing) {
+      again = true
+      return
     }
-    limitsTimer = setTimeout(() => void refreshLimits(), limitsEveryMs)
+    clearTimeout(limitsTimer)
+    probing = true
+    again = false
+    try {
+      // A provider that is switched off is not probed at all.
+      await Promise.allSettled([
+        providers.claude && probeUsage({ cwd: probeDir }).then(async (limits) => {
+          collector.setLimits(limits)
+          await publish()
+        }),
+        providers.codex && probeCodexUsage().then(async (usage) => {
+          codex = usage
+          await publish()
+        }),
+      ])
+    } finally {
+      probing = false
+      if (again) void refreshLimits()
+      else limitsTimer = setTimeout(() => void refreshLimits(), limitsEveryMs)
+    }
   }
 
   const pollSessions = async () => {
-    await collector.pollSessions().catch(() => undefined)
+    const [, sessions] = await Promise.all([
+      collector.pollSessions().catch(() => undefined),
+      readCodexSessions(),
+    ])
+    codexSessions = sessions
     await publish()
     setTimeout(() => void pollSessions(), SESSIONS_MS)
   }
@@ -88,6 +124,10 @@ const main = async () => {
       void refreshLimits()
     } else if (message.type === 'configure') {
       limitsEveryMs = Math.max(1, message.limitsRefreshMinutes) * 60_000
+      const turnedOn = (message.usageProviders.claude && !providers.claude) || (message.usageProviders.codex && !providers.codex)
+      providers = message.usageProviders
+      // Fetch a provider's limits right away when it is switched back on.
+      if (turnedOn) void refreshLimits()
     }
   })
 

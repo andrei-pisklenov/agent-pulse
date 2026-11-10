@@ -331,6 +331,25 @@ button:focus-visible {
 .theme-terminal .pill-horizontal { height: 26px; padding: 0 8px; }
 
 .pill-vertical .pill-count { flex-direction: column; gap: 2px; }
+.provider-claude { --provider-color: light-dark(#a34930, #f0a188); }
+.provider-codex { --provider-color: light-dark(#19665c, #80cebd); }
+.theme-terminal .provider-claude { --provider-color: #f0a188; }
+.theme-terminal .provider-codex { --provider-color: #80cebd; }
+.pill-provider { display: flex; flex-direction: column; align-items: center; gap: 2px; width: 100%; line-height: 1.1; }
+.pill-horizontal .pill-provider { flex-direction: row; width: auto; gap: 4px; }
+.pill-provider-name { font-size: 10px; font-weight: 600; color: var(--provider-color); }
+.theme-terminal .pill-provider-name { font-size: 9px; }
+.pill-period { font-size: 9px; max-width: 100%; overflow-wrap: anywhere; text-align: center; }
+.provider-limits { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin: 0 2px; }
+.provider-limit-card { min-width: 0; padding: 6px 7px; border-radius: 9px; background: var(--card); }
+.provider-limit-card:only-child { grid-column: 1 / -1; }
+.provider-limit-card h2 { margin: 0 0 5px; color: var(--provider-color); font-size: 11px; font-weight: 600; }
+.provider-limit-card .limits:not(.limits-compact) { grid-template-columns: auto minmax(0, 1fr) auto; gap: 3px 5px; padding: 0; margin: 0; background: none; }
+.provider-limit-card .limit-reset { grid-column: 1 / -1; }
+.provider-limit-card .limit-reset:empty { display: none; }
+.provider-limit-card .pace { grid-column: 1 / -1; }
+.provider-limit-card .bar-fill.lvl-ok { background: var(--provider-color); }
+.provider-unavailable { font-size: 10.5px; }
 .pill-count { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; }
 .pill-limit { display: inline-flex; gap: 4px; align-items: baseline; }
 .pill-vertical .pill-limit { flex-direction: column; align-items: center; gap: 0; }
@@ -355,6 +374,7 @@ button:focus-visible {
 
 /* ---------- horizontal strip ---------- */
 
+.strip-limit-provider { display: flex; align-items: center; flex-shrink: 0; font-size: 10px; }
 .strip-wrap { display: flex; flex-direction: column; }
 .strip-wrap-up { flex-direction: column-reverse; }
 .theme-terminal .strip-wrap { background: none; border: 0; gap: 4px; }

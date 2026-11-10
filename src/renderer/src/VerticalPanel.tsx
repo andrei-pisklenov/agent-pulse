@@ -2,12 +2,12 @@ import { useState } from 'react'
 import { RUNNING_MARK, type PanelState } from '../../shared/types'
 import { groupSessions, statusLabel } from './format'
 import { IconChevron, IconHorizontal, IconMenu, IconPin, Logo } from './icons'
-import { LimitBars, SessionRow, Totals, type ViewProps } from './parts'
+import { CodexLimitBars, LimitBars, SessionRow, Totals, type ViewProps } from './parts'
 
 const ACTIVE = ['waiting', 'busy', 'finished'] as const
 
 export const VerticalPanel = (props: ViewProps & { panel: PanelState }) => {
-  const { sessions, limits, totals, attention, settings, now, open, panel } = props
+  const { sessions, limits, codex, totals, attention, settings, now, open, panel } = props
   const [showIdle, setShowIdle] = useState(false)
   const groups = groupSessions(sessions)
   const quiet = [...groups.idle, ...groups.ended]
@@ -30,7 +30,22 @@ export const VerticalPanel = (props: ViewProps & { panel: PanelState }) => {
         </button>
         <button className="icon-btn" aria-label="Menu" title="Menu" onClick={() => window.pulse.showMenu()}><IconMenu /></button>
       </div>
-      <LimitBars limits={limits} now={now} pace={settings.features.paceForecast} />
+      {codex
+        ? (
+            <div className="provider-limits">
+              {settings.usageProviders.claude && (
+                <section className="provider-limit-card provider-claude" aria-label="Claude plan limits">
+                  <h2>Claude</h2>
+                  <LimitBars limits={limits} now={now} pace={settings.features.paceForecast} />
+                </section>
+              )}
+              <section className="provider-limit-card provider-codex" aria-label="Codex plan limits">
+                <h2>Codex</h2>
+                <CodexLimitBars codex={codex} now={now} />
+              </section>
+            </div>
+          )
+        : settings.usageProviders.claude && <LimitBars limits={limits} now={now} pace={settings.features.paceForecast} />}
       <div className="groups">
         {ACTIVE.map(status => groups[status].length > 0 && (
           <section key={status}>
@@ -38,7 +53,7 @@ export const VerticalPanel = (props: ViewProps & { panel: PanelState }) => {
             {groups[status].map(s => <SessionRow key={s.id} s={s} settings={settings} now={now} open={open} />)}
           </section>
         ))}
-        {sessions.length === 0 && <div className="empty muted">No Claude sessions running</div>}
+        {sessions.length === 0 && <div className="empty muted">No sessions running</div>}
         {quiet.length > 0 && (
           <button className="row row-toggle muted" onClick={() => setShowIdle(v => !v)} aria-expanded={showIdle}>
             <span className="ttl">
@@ -49,7 +64,7 @@ export const VerticalPanel = (props: ViewProps & { panel: PanelState }) => {
         )}
         {showIdle && quiet.map(s => <SessionRow key={s.id} s={s} settings={settings} now={now} open={open} />)}
       </div>
-      <Totals totals={totals} attention={attention} settings={settings} />
+      <Totals totals={totals} attention={attention} settings={settings} codex={codex} now={now} />
     </div>
   )
 }

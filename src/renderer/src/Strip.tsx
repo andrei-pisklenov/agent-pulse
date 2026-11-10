@@ -3,7 +3,7 @@ import type { SessionStatus } from '../../core/types'
 import type { PanelState } from '../../shared/types'
 import { formatAge, formatReset, groupSessions, limitLevel, statusLabel } from './format'
 import { IconMenu, IconVertical, Logo, StatusIcon } from './icons'
-import { BlockedBadge, LimitBars, SessionDetail, SessionRow, type ViewProps } from './parts'
+import { BlockedBadge, CodexLimitBars, LimitBars, SessionDetail, SessionRow, type ViewProps } from './parts'
 
 type Drawer = { kind: 'session', id: string } | { kind: 'group', status: SessionStatus } | null
 
@@ -16,7 +16,7 @@ const StripButtons = () => (
 
 /** Horizontal mode: chips, status segments or a thin ticker, with a drawer for details. */
 export const Strip = (props: ViewProps & { panel: PanelState }) => {
-  const { sessions, limits, attention, settings, now, open, panel } = props
+  const { sessions, limits, codex, gauges, attention, settings, now, open, panel } = props
   const [drawer, setDrawer] = useState<Drawer>(null)
   const groups = groupSessions(sessions)
   const active = [...groups.waiting, ...groups.busy, ...groups.finished]
@@ -24,18 +24,31 @@ export const Strip = (props: ViewProps & { panel: PanelState }) => {
   const style = settings.horizontalStyle
   const drawerSession = drawer?.kind === 'session' ? sessions.find(s => s.id === drawer.id) : undefined
   const drawerGroup = drawer?.kind === 'group' ? (drawer.status === 'idle' ? [...groups.idle, ...groups.ended] : groups[drawer.status]) : undefined
+  const claudeBars = <LimitBars limits={limits} now={now} compact pace={settings.features.paceForecast} />
+  const limitBars = codex
+    ? (
+        <>
+          {settings.usageProviders.claude && (
+            <div className="strip-limit-provider"><span className="muted">Claude</span>{claudeBars}</div>
+          )}
+          <div className="strip-limit-provider"><span className="muted">Codex</span><CodexLimitBars codex={codex} now={now} compact /></div>
+        </>
+      )
+    : settings.usageProviders.claude && claudeBars
 
   let bar
   if (style === 'ticker') {
     bar = (
       <div className="strip strip-ticker" style={{ maxWidth: panel.maxWidth }}>
         <Logo size={11} />
-        {[limits?.session, limits?.week].map((w, i) => (
-          <span key={i} className="nowrap">
-            <span className="muted">{i ? '7d' : '5h'}</span> <span className={w ? `lvl-${limitLevel(w.percent)}-text` : ''}>{w ? `${w.percent}%` : '–'}</span> <span className="muted">{w ? `↻${formatReset(w, now)}` : ''}</span>
+        {gauges.map(({ provider, period, window }) => (
+          <span key={`${provider}-${period}`} className="nowrap">
+            <span className="muted">{codex && `${provider} `}{period}</span>{' '}
+            <span className={window ? `lvl-${limitLevel(window.percent)}-text` : ''}>{window ? `${window.percent}%` : '–'}</span>{' '}
+            <span className="muted">{window?.resetsAt || window?.resetsText ? `↻${formatReset(window, now)}` : ''}</span>
           </span>
         ))}
-        <span className="sep-v" />
+        {gauges.length > 0 && <span className="sep-v" />}
         {active.map(s => (
           <button key={s.id} className="tick" onClick={() => open(s.id)} title={`${statusLabel[s.status]}: ${s.title}`}>
             <StatusIcon status={s.status} theme={settings.theme} size={12} />
@@ -64,7 +77,7 @@ export const Strip = (props: ViewProps & { panel: PanelState }) => {
     bar = (
       <div className="strip strip-segments" style={{ maxWidth: panel.maxWidth }}>
         <span className="drag-handle"><Logo /></span>
-        <LimitBars limits={limits} now={now} compact pace={settings.features.paceForecast} />
+        {limitBars}
         <button
           className={`segment segment-waiting ${groups.waiting.length ? 'has-waiting' : ''}`}
           onMouseEnter={() => groups.waiting.length && setDrawer({ kind: 'group', status: 'waiting' })}
@@ -89,8 +102,7 @@ export const Strip = (props: ViewProps & { panel: PanelState }) => {
     bar = (
       <div className="strip strip-chips" style={{ maxWidth: panel.maxWidth }}>
         <span className="drag-handle"><Logo /></span>
-        <LimitBars limits={limits} now={now} compact pace={settings.features.paceForecast} />
-        <span className="sep-v" />
+        {limitBars && <>{limitBars}<span className="sep-v" /></>}
         <div className="chips">
           {active.map(s => (
             <button
