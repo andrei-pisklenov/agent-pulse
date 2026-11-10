@@ -1,8 +1,8 @@
 # Design options
 
-Alternatives we built and tried, kept so we can switch or come back to them. Everything below is still in the code and selectable in the menu-bar menu unless marked otherwise.
+Alternatives we built and tried, kept so we can switch or come back to them. Everything below is still in the code and selectable in the settings window unless marked otherwise.
 
-## Crab dances (Menu bar → Crab → Dance)
+## Crab dances (Settings › Menu bar)
 
 What the crab does while sessions run. Chosen default: **Walkabout** (calm, reads as "working"). Code: `src/renderer/src/crab.ts` (`DANCES`).
 
@@ -18,11 +18,11 @@ What the crab does while sessions run. Chosen default: **Walkabout** (calm, read
 
 In every dance, a session that waits for you while others run makes the crab raise both claws and widen its eyes. With nothing running: asleep ("z") with nothing waiting, or puzzled ("?") when a session waits.
 
-## Menu-bar icons (Menu bar → Icon)
+## Menu-bar icons (Settings › Menu bar)
 
 Crab (default), octopus (same moods, with tentacles), heartbeat line, twin limit rings, spark, signal bars, or text only. All are template images so macOS tints them like its own icons. A coloured (orange) waiting accent was dropped: it can't be tinted, so it came out white on a light menu bar.
 
-## Panel looks
+## Panel looks (Settings › Panel)
 
 - **Themes:** Glass (native vibrancy) or Terminal HUD.
 - **Horizontal layouts:** chips with a detail drawer (default), status segments, or a thin ticker.
@@ -30,6 +30,6 @@ Crab (default), octopus (same moods, with tentacles), heartbeat line, twin limit
 - **Corners:** macOS rounded (default) or square.
 - **Placement:** gap to the screen edge 0/4/8 px, and snap over a side Dock.
 
-## Features (Features menu)
+## Features (Settings › General and Usage)
 
-Pace forecast, pending question with snooze, time sessions waited on you, quick switcher on ⌃⌥C. All on by default; switch any off to compare.
+Pace forecast (Usage), pending question with snooze, time sessions waited on you, quick switcher on ⌃⌥C (General). All on by default; switch any off to compare.
