@@ -17,6 +17,7 @@
     "start": "electron-vite preview",
     "package": "electron-vite build && electron-builder --mac --dir",
     "install-app": "yarn package && sh scripts/install-app.sh",
+    "update": "sh scripts/update.sh",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "typecheck": "tsc -p tsconfig.node.json && tsc -p tsconfig.web.json",

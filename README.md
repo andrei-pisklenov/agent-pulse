@@ -164,11 +164,13 @@ When it's done, the crab appears in the menu bar. To check from a terminal that 
 pgrep -fl "/Applications/Agent Pulse.app"
 ```
 
-To update, pull and install again:
+To update, ask Claude Code (or Codex) in the `agent-pulse` folder to "update Agent Pulse", or run it yourself:
 
 ```bash
-git pull && yarn install && yarn install-app
+yarn update
 ```
+
+It pulls the latest changes from GitHub, and if there are any, rebuilds and reinstalls the app and lists what's new. It doesn't touch a checkout with uncommitted changes or one that isn't on `main`. Your settings and usage history are kept.
 
 To uninstall, switch off **Launch at login** in **Settings › General** if it's on, quit Agent Pulse, and delete `/Applications/Agent Pulse.app`. Its settings and state are in `~/Library/Application Support/agent-pulse`; delete that folder too to remove them.
 
