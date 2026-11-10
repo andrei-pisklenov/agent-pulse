@@ -15,6 +15,9 @@ interface PillProps {
   scale: number
 }
 
+/** How long the waiting glow keeps pulsing. */
+const GLOW_MS = 20_000
+
 /** Resting state: status counts and limit gauges; glows when a session needs input. */
 export const Pill = ({ sessions, gauges, theme, orientation, now, open, scale }: PillProps) => {
   const groups = groupSessions(sessions)
@@ -26,9 +29,11 @@ export const Pill = ({ sessions, gauges, theme, orientation, now, open, scale }:
     { status: 'finished' as const, n: groups.finished.length },
   ].filter(c => c.n > 0)
   const labeled = gauges.some(gauge => gauge.provider === 'Codex')
+  // The glow moves only for a short while after a session starts waiting, then holds still.
+  const steady = newest !== undefined && now - newest.statusSince > GLOW_MS
 
   return (
-    <div className={`pill pill-${orientation} ${waiting.length ? 'pill-alert' : ''}`} style={{ zoom: scale }}>
+    <div className={`pill pill-${orientation} ${waiting.length ? 'pill-alert' : ''} ${steady ? 'pill-alert-steady' : ''}`} style={{ zoom: scale }}>
       {gauges.map(({ provider, window, period }) => {
         const key = `${provider}-${period}`
         const percent = window?.percent ?? null

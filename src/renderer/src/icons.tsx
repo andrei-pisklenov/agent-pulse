@@ -11,20 +11,9 @@ export const StatusIcon = ({ status, theme, size = 16 }: { status: SessionStatus
   const common = { 'width': size, 'height': size, 'viewBox': '0 0 14 14', 'role': 'img', 'aria-label': statusLabel[status] }
   switch (status) {
     case 'waiting':
-      return (
-        <svg {...common} className="pulse">
-          <circle cx="7" cy="7" r="6" fill="var(--waiting)" />
-          <path d="M7 3.8v3.6" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" />
-          <circle cx="7" cy="10" r=".95" fill="#fff" />
-        </svg>
-      )
+      return <span className="icon-alert pulse" role="img" aria-label={statusLabel[status]} style={{ width: size, height: size, fontSize: size * 0.72 }}>!</span>
     case 'busy':
-      return (
-        <svg {...common}>
-          <circle cx="7" cy="7" r="5.2" fill="none" stroke="var(--busy-track)" strokeWidth="2" />
-          <path className="spin" d="M7 1.8a5.2 5.2 0 0 1 5.2 5.2" fill="none" stroke="var(--busy)" strokeWidth="2" strokeLinecap="round" />
-        </svg>
-      )
+      return <span className="icon-spinner" role="img" aria-label={statusLabel[status]} style={{ width: size, height: size }} />
     case 'finished':
       return (
         <svg {...common}>

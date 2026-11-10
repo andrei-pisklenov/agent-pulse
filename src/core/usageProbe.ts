@@ -50,7 +50,9 @@ export const probeUsage = async (options: ProbeOptions): Promise<Limits> => {
 
   return new Promise<Limits>((resolve) => {
     // `script` needs real pipes (Node's stdio pipes are sockets), hence the `cat`s around it.
-    const pty = `/usr/bin/script -q /dev/null /bin/sh -c 'stty cols 160 rows 60 2>/dev/null; exec "$0" --permission-mode default' "$0"`
+    // No MCP servers and no hooks: /usage needs neither, and they make every probe slower and heavier.
+    const flags = `--permission-mode default --strict-mcp-config --settings "{\\"disableAllHooks\\":true}"`
+    const pty = `/usr/bin/script -q /dev/null /bin/sh -c 'stty cols 160 rows 60 2>/dev/null; exec "$0" ${flags}' "$0"`
     const child = spawn('/bin/sh', ['-c', `cat | ${pty} | cat`, bin], {
       cwd: options.cwd,
       env: { ...process.env, TERM: 'xterm-256color', AGENT_PULSE_PROBE: '1' },

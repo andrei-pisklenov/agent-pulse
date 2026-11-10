@@ -4,7 +4,7 @@
  */
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { Collector, defaultClaudePaths, probeUsage, UsageHistory, type CollectorState } from '../core'
+import { Collector, defaultClaudePaths, probeDue, probeUsage, UsageHistory, type CollectorState, type ProbeTrack } from '../core'
 import { readCodexSessions } from '../core/codexSessions'
 import { probeCodexUsage } from '../core/codexUsage'
 import { compareSessions } from '../core/status'
@@ -55,6 +55,11 @@ const main = async () => {
   let lastState = ''
   let codex: CodexUsage | null = null
   let codexSessions: Session[] = []
+  // Per provider: when its limits were read and whether its sessions ran since.
+  const tracks: Record<'claude' | 'codex', ProbeTrack> = {
+    claude: { lastAt: null, active: false, resetsAt: [] },
+    codex: { lastAt: null, active: false, resetsAt: [] },
+  }
   const history = new UsageHistory(defaultClaudePaths().transcripts, historyPath)
   let historyTimer: NodeJS.Timeout | undefined
   let historyRunning = false
@@ -91,30 +96,38 @@ const main = async () => {
     }
   }
 
-  const refreshLimits = async () => {
+  /** Reads the plan limits of each provider that is switched on and due; `force` reads them all. */
+  const refreshLimits = async (force = false) => {
     if (probing) {
-      again = true
+      again = again || force
       return
     }
     clearTimeout(limitsTimer)
     probing = true
     again = false
+    const now = Date.now()
+    const due = (provider: 'claude' | 'codex') => providers[provider] && (force || probeDue(tracks[provider], limitsEveryMs, now))
+    const mark = (provider: 'claude' | 'codex', resetsAt: (number | null)[]) => {
+      tracks[provider] = { lastAt: now, active: false, resetsAt }
+    }
     try {
-      // A provider that is switched off is not probed at all.
+      // A provider that is switched off, or idle since its last probe, is not probed.
       await Promise.allSettled([
-        providers.claude && probeUsage({ cwd: probeDir }).then(async (limits) => {
+        due('claude') && probeUsage({ cwd: probeDir }).then(async (limits) => {
+          mark('claude', [limits.session?.resetsAt ?? null, limits.week?.resetsAt ?? null])
           collector.setLimits(limits)
           await publish()
         }),
-        providers.codex && probeCodexUsage().then(async (usage) => {
+        due('codex') && probeCodexUsage().then(async (usage) => {
+          mark('codex', usage?.windows.map(w => w.resetsAt) ?? [])
           codex = usage
           await publish()
         }),
       ])
     } finally {
       probing = false
-      if (again) void refreshLimits()
-      else limitsTimer = setTimeout(() => void refreshLimits(), limitsEveryMs)
+      if (again) void refreshLimits(true)
+      else limitsTimer = setTimeout(() => void refreshLimits(), Math.min(limitsEveryMs, 60_000 * 5))
     }
   }
 
@@ -124,6 +137,9 @@ const main = async () => {
       readCodexSessions(),
     ])
     codexSessions = sessions
+    // Limits only move while sessions run, so the probes follow the activity.
+    if (collector.snapshot().sessions.some(s => s.status === 'busy')) tracks.claude.active = true
+    if (sessions.some(s => s.status === 'busy')) tracks.codex.active = true
     await publish()
     setTimeout(() => void pollSessions(), SESSIONS_MS)
   }
@@ -145,13 +161,13 @@ const main = async () => {
     } else if (message.type === 'refreshHistory') {
       void updateHistory()
     } else if (message.type === 'refreshLimits') {
-      void refreshLimits()
+      void refreshLimits(true)
     } else if (message.type === 'configure') {
       limitsEveryMs = Math.max(1, message.limitsRefreshMinutes) * 60_000
       const turnedOn = (message.usageProviders.claude && !providers.claude) || (message.usageProviders.codex && !providers.codex)
       providers = message.usageProviders
       // Fetch a provider's limits right away when it is switched back on.
-      if (turnedOn) void refreshLimits()
+      if (turnedOn) void refreshLimits(true)
     }
   })
 

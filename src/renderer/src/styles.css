@@ -118,21 +118,37 @@ html, body {
 
 /* ---------- shared bits ---------- */
 
+/*
+ * Every animation here changes only the transform or opacity of an HTML element of its own, so
+ * the GPU moves it without repainting the window. Animating a box-shadow, or anything inside an
+ * SVG, repaints the translucent window 60 times a second.
+ */
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
 @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
-@keyframes glow {
-  0%, 100% { box-shadow: inset 0 0 0 1.5px var(--waiting); }
-  50% { box-shadow: inset 0 0 0 3px var(--waiting-tint); }
-}
-/* A soft inner glow along the window edges: macOS clips glass windows to its own corner radius,
-   which a crisp ring could never match, while a blur fades into whatever corner shape it gets. */
-@keyframes glow-soft {
-  0%, 100% { box-shadow: inset 0 0 7px 1.5px rgba(232, 137, 12, .9); }
-  50% { box-shadow: inset 0 0 14px 3px rgba(232, 137, 12, .35); }
-}
+@keyframes fade { 0%, 100% { opacity: 0; } 50% { opacity: 1; } }
 
-.spin { animation: spin 1s linear infinite; transform-origin: 7px 7px; }
+/* The animated status icons are plain HTML: Chromium moves an animated SVG at several times the cost. */
+.icon-spinner {
+  display: inline-block;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 2px solid var(--busy-track);
+  border-top-color: var(--busy);
+  animation: spin 1s linear infinite;
+}
+.icon-alert {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--waiting);
+  color: #fff;
+  font-weight: 800;
+  line-height: 1;
+}
 .pulse { animation: pulse 1.6s ease-in-out infinite; }
 
 .muted { color: var(--fg2); }
@@ -358,8 +374,25 @@ button:focus-visible {
 .pill-horizontal .pill-sep { width: 1px; height: 18px; }
 .pill-quiet { font-size: 11px; }
 
-.pill-alert { animation: glow 1.6s ease-in-out infinite; }
-.theme-glass .pill-alert { animation-name: glow-soft; }
+/* The ring is drawn once; a second, wider ring on top fades in and out, which only changes its opacity. */
+.pill-alert { position: relative; box-shadow: inset 0 0 0 1.5px var(--waiting); }
+.pill-alert::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 3px var(--waiting-tint);
+  opacity: 0;
+  animation: fade 1.6s ease-in-out infinite;
+  will-change: opacity;
+}
+/* A soft inner glow along the window edges: macOS clips glass windows to its own corner radius,
+   which a crisp ring could never match, while a blur fades into whatever corner shape it gets. */
+.theme-glass .pill-alert { box-shadow: inset 0 0 7px 1.5px rgba(232, 137, 12, .9); }
+.theme-glass .pill-alert::after { box-shadow: inset 0 0 14px 3px rgba(232, 137, 12, .45); }
+/* After a while the glow holds still: the ring stays, the motion stops. */
+.pill-alert-steady::after { animation: none; }
 .square.theme-terminal > *, .square .strip-wrap > * { border-radius: 0; }
 .theme-terminal .pill-alert { border-color: var(--waiting); }
 

@@ -191,15 +191,24 @@ const updateTrayTitle = () => {
   tray.setTitle(parts.length ? ` ${parts.join(' ')}` : '', { fontType: 'monospacedDigit' })
 }
 
+/** Decoded menu-bar frames: the animation loops, so each PNG is decoded once. */
+const trayImages = new Map<string, Electron.NativeImage>()
+const MAX_TRAY_IMAGES = 500
+
 const setTrayImage = (dataUrl: string) => {
   if (settings.trayIcon === 'text' || !dataUrl) {
     tray.setImage(nativeImage.createEmpty())
     return
   }
-  const buffer = Buffer.from(dataUrl.slice(dataUrl.indexOf(',') + 1), 'base64')
-  const image = nativeImage.createFromBuffer(buffer, { scaleFactor: 2 })
-  // Template images are tinted by macOS to match the menu bar, like the system's own icons.
-  image.setTemplateImage(true)
+  let image = trayImages.get(dataUrl)
+  if (!image) {
+    if (trayImages.size >= MAX_TRAY_IMAGES) trayImages.clear()
+    const buffer = Buffer.from(dataUrl.slice(dataUrl.indexOf(',') + 1), 'base64')
+    image = nativeImage.createFromBuffer(buffer, { scaleFactor: 2 })
+    // Template images are tinted by macOS to match the menu bar, like the system's own icons.
+    image.setTemplateImage(true)
+    trayImages.set(dataUrl, image)
+  }
   tray.setImage(image)
 }
 

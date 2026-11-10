@@ -118,7 +118,7 @@ flowchart LR
   live["~/.claude/sessions<br/>live status of each claude process"] --> collector
   transcripts["~/.claude/projects<br/>transcripts: tokens, pending questions"] --> collector
   desktop["Claude desktop app<br/>session titles, last opened"] --> collector
-  usage["claude /usage<br/>in a hidden terminal, every 5 min"] --> collector
+  usage["claude /usage<br/>in a hidden terminal, every 5 min while sessions run"] --> collector
   codex["codex app-server<br/>account limits and token totals"] --> collector
   collector["Collector<br/>background process"] --> panel["Panel"]
   collector --> tray["Menu-bar icon"]
@@ -183,9 +183,9 @@ A few things to know:
 
 - **Undocumented internals.** Agent Pulse depends on details that Anthropic doesn't document: the session files, the desktop app's session store, the `claude://code/continue` link (found by trying it out) and the layout of the `/usage` screen. A Claude update can break any of them without notice.
 - **The `/usage` probe** is a real `claude` process, started in its own empty folder (`~/Library/Application Support/agent-pulse/probe`). On the first run it accepts Claude Code's "trust this folder" prompt for that folder only.
-  - Like any `claude` start, it loads your settings, hooks and MCP servers.
+  - It starts with no MCP servers and with hooks switched off (`--strict-mcp-config`, `disableAllHooks`), since `/usage` needs neither. Your settings and plugins still load.
   - It sets `AGENT_PULSE_PROBE=1`, so a hook can skip it with `[ -n "$AGENT_PULSE_PROBE" ] && exit 0`.
-  - To run it less often, pick a longer interval under **Check limits** in **Settings › Usage**.
+  - It runs every 5 minutes while a Claude session is working, and every 20 minutes when nothing ran in between (use on claude.ai or other devices then shows up within 20 minutes). It also runs right after a limit resets. Codex limits follow the same rule with Codex tasks. Pick a different interval under **Check limits** in **Settings › Usage**.
 - **Finding `claude`.** The app looks for `claude` in `~/.local/bin`, `~/.claude/local`, `/opt/homebrew/bin` and `/usr/local/bin`, then on your login shell's `PATH`.
 
 ## Development
