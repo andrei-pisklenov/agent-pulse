@@ -16,7 +16,9 @@ system-wide. Then run `yarn install` and `yarn install-app` from the repo root.
 up to date with GitHub. Run `yarn update` from the repo root. It pulls `main`, and when something new came in it
 reinstalls the app and lists the new commits; otherwise it says the app is already up to date. It stops without
 changing anything when the checkout has uncommitted changes or isn't on `main`: then tell the person, and ask what
-to do. Don't stash, reset or switch branches on your own.
+to do. Don't stash, reset or switch branches on your own. Yarn runs scripts only after a first `yarn install`, so in a
+checkout that was never installed, follow the install steps above instead. A checkout from before `yarn update`
+existed doesn't have it yet: run `git pull --ff-only` once, then `yarn update`.
 
 Settings and usage history live in `~/Library/Application Support/agent-pulse`, so they survive installs and updates.
 

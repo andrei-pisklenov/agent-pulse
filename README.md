@@ -170,7 +170,7 @@ To update, ask Claude Code (or Codex) in the `agent-pulse` folder to "update Age
 yarn update
 ```
 
-It pulls the latest changes from GitHub, and if there are any, rebuilds and reinstalls the app and lists what's new. It doesn't touch a checkout with uncommitted changes or one that isn't on `main`. Your settings and usage history are kept.
+It pulls the latest changes from GitHub, and if there are any, rebuilds and reinstalls the app and lists what's new. It doesn't touch a checkout with uncommitted changes or one that isn't on `main`. Your settings and usage history are kept. In a checkout from before `yarn update` existed, run `git pull` once first.
 
 To uninstall, switch off **Launch at login** in **Settings › General** if it's on, quit Agent Pulse, and delete `/Applications/Agent Pulse.app`. Its settings and state are in `~/Library/Application Support/agent-pulse`; delete that folder too to remove them.
 
