@@ -9,10 +9,13 @@ import { api, Group, icons, PageHeader, Row, save, Segmented, Select, Switch, Ti
 
 const DAY = 86_400_000
 
+type Provider = 'claude' | 'codex'
+
 interface Day {
   date: string
-  claude: number
-  codex: number
+  /** null: no figure for that day (Codex reports a day only once it is over). */
+  claude: number | null
+  codex: number | null
 }
 
 /** Daily totals for the last `count` days, oldest first; today's Claude figure is the live one. */
@@ -25,13 +28,20 @@ const daysOf = (count: number, settings: Settings, snapshot: Snapshot, history: 
     const date = localDayKey(now - (count - 1 - i) * DAY)
     return {
       date,
-      claude: settings.usageProviders.claude ? claude.get(date) ?? 0 : 0,
-      codex: settings.usageProviders.codex ? codex.get(date) ?? 0 : 0,
+      claude: history || date === today ? claude.get(date) ?? 0 : null,
+      // Codex days before its first report count as zero; only the days after its latest one are unknown.
+      codex: codex.has(date) ? codex.get(date)! : snapshot.codex?.dailyTokens?.some(d => d.date > date) ? 0 : null,
     }
   })
 }
 
-const sum = (days: Day[]) => days.reduce((a, d) => ({ claude: a.claude + d.claude, codex: a.codex + d.codex }), { claude: 0, codex: 0 })
+/** Sum of the known days; null when none is known. */
+const total = (days: Day[], provider: Provider): number | null => {
+  const known = days.map(d => d[provider]).filter((n): n is number => n !== null)
+  return known.length ? known.reduce((a, n) => a + n, 0) : null
+}
+
+const tokensText = (n: number | null) => (n === null ? '–' : formatTokens(n))
 
 /** A round top for the axis: 1, 2 or 5 times a power of ten. */
 const niceMax = (n: number) => {
@@ -103,11 +113,17 @@ const LimitCards = ({ settings, snapshot, now }: { settings: Settings, snapshot:
   )
 }
 
-const Chart = ({ days, now }: { days: Day[], now: number }) => {
-  const top = niceMax(Math.max(...days.map(d => d.claude + d.codex)))
-  const total = sum(days)
+const PROVIDERS: Record<Provider, { label: string, color: string }> = {
+  claude: { label: 'Claude', color: 'var(--claude)' },
+  codex: { label: 'Codex', color: 'var(--codex)' },
+}
+
+const Chart = ({ days, provider, now }: { days: Day[], provider: Provider, now: number }) => {
+  const { label, color } = PROVIDERS[provider]
+  const values = days.map(d => d[provider])
+  const top = niceMax(Math.max(0, ...values.map(n => n ?? 0)))
   const columns = { gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))`, gap: days.length > 10 ? 3 : 18 }
-  const label = (date: string, i: number) => {
+  const dayLabel = (date: string, i: number) => {
     if (date === localDayKey(now)) return 'Today'
     if (days.length > 10 && i % 5 !== (days.length - 1) % 5) return ''
     return new Date(`${date}T12:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
@@ -115,30 +131,39 @@ const Chart = ({ days, now }: { days: Day[], now: number }) => {
   return (
     <div className="s-group-body s-chart">
       <div className="s-chart-head">
-        <span>
-          <strong>{formatTokens(total.claude)}</strong> <span className="s-row-hint" style={{ display: 'inline' }}>Claude</span>
-          {'   '}
-          <strong>{formatTokens(total.codex)}</strong> <span className="s-row-hint" style={{ display: 'inline' }}>Codex</span>
-        </span>
-        <span className="s-legend"><span><b style={{ background: 'var(--claude)' }} />Claude</span><span><b style={{ background: 'var(--codex)' }} />Codex</span></span>
+        <span><strong>{tokensText(total(days, provider))}</strong> <span className="s-row-hint" style={{ display: 'inline' }}>in {days.length} days</span></span>
+        <span className="s-legend"><span><b style={{ background: color }} />{label}</span></span>
       </div>
       <div className="s-plot">
         <div className="s-axis" aria-hidden="true"><span>{formatTokens(top)}</span><span>{formatTokens(top / 2)}</span><span>0</span></div>
-        <div className="s-bars" style={columns} role="img" aria-label={`Tokens per day for the last ${days.length} days, Claude and Codex stacked`}>
-          {days.map(d => (
-            <div className="s-col" key={d.date} title={`${d.date}: Claude ${formatTokens(d.claude)}, Codex ${formatTokens(d.codex)}`}>
-              {d.codex > 0 && <i style={{ height: `${(d.codex / top) * 100}%`, background: 'var(--codex)' }} />}
-              {d.claude > 0 && <i style={{ height: `${(d.claude / top) * 100}%`, background: 'var(--claude)' }} />}
+        <div className="s-bars" style={columns} role="img" aria-label={`${label} tokens per day for the last ${days.length} days`}>
+          {days.map((d, i) => (
+            <div className="s-col" key={d.date} title={`${d.date}: ${tokensText(values[i]!)}`}>
+              {values[i]! > 0 && <i style={{ height: `${(values[i]! / top) * 100}%`, background: color }} />}
             </div>
           ))}
         </div>
       </div>
       <div className="s-xaxis" style={columns} aria-hidden="true">
-        {days.map((d, i) => <span key={d.date}>{label(d.date, i)}</span>)}
+        {days.map((d, i) => <span key={d.date}>{dayLabel(d.date, i)}</span>)}
       </div>
     </div>
   )
 }
+
+/** A total per provider, never added together: the two count tokens differently. */
+const TotalCard = ({ title, days, shown }: { title: string, days: Day[], shown: Provider[] }) => (
+  <div className="s-card">
+    <div className="s-card-key">{title}</div>
+    {shown.map(p => (
+      <div className="s-card-line" key={p}>
+        <span className="s-dot" style={{ background: PROVIDERS[p].color }} />
+        <span className="s-card-value">{tokensText(total(days, p))}</span>
+        <span className="s-card-sub">{PROVIDERS[p].label}</span>
+      </div>
+    ))}
+  </div>
+)
 
 const REFRESH_OPTIONS = [
   { value: 2, label: 'Every 2 minutes' },
@@ -157,13 +182,7 @@ export const UsagePage = ({ settings, snapshot, history, now }: {
   const month = daysOf(30, settings, snapshot, history, now)
   const week = month.slice(-7)
   const shown = range === 7 ? week : month
-  const card = (days: Day[]) => {
-    const t = sum(days)
-    return { value: formatTokens(t.claude + t.codex), sub: `Claude ${formatTokens(t.claude)} · Codex ${formatTokens(t.codex)}` }
-  }
-  const today = card(month.slice(-1))
-  const seven = card(week)
-  const thirty = card(month)
+  const on = (['claude', 'codex'] as const).filter(p => settings.usageProviders[p])
   const providers = (patch: Partial<Settings['usageProviders']>) => save({ usageProviders: { ...settings.usageProviders, ...patch } })
   const checked = Math.max(snapshot.limits?.fetchedAt ?? 0, 0)
   const refreshOptions = REFRESH_OPTIONS.some(o => o.value === settings.limitsRefreshMinutes)
@@ -176,26 +195,32 @@ export const UsagePage = ({ settings, snapshot, history, now }: {
 
       <LimitCards settings={settings} snapshot={snapshot} now={now} />
 
-      <div className="s-cards">
-        <div className="s-card"><div className="s-card-key">Today</div><div className="s-card-value">{today.value}</div><div className="s-card-sub">{today.sub}</div></div>
-        <div className="s-card"><div className="s-card-key">7 days</div><div className="s-card-value">{seven.value}</div><div className="s-card-sub">{seven.sub}</div></div>
-        <div className="s-card"><div className="s-card-key">30 days</div><div className="s-card-value">{history ? thirty.value : '…'}</div><div className="s-card-sub">{history ? thirty.sub : 'Reading transcripts…'}</div></div>
-        <div className="s-card"><div className="s-card-key">Waited on you</div><div className="s-card-value">{formatDuration(snapshot.attention.blockedMs)}</div><div className="s-card-sub">today</div></div>
-      </div>
-
-      <section>
-        <div className="s-chart-head" style={{ margin: '0 0 7px 12px' }}>
-          <h3 className="s-group-title" style={{ margin: 0 }}>Tokens per day</h3>
-          <Segmented label="Days shown" options={[{ value: 7, label: '7 days' }, { value: 30, label: '30 days' }]} value={range} onChange={setRange} />
+      {on.length > 0 && (
+        <div className="s-cards">
+          <TotalCard title="Today" days={month.slice(-1)} shown={on} />
+          <TotalCard title="7 days" days={week} shown={on} />
+          <TotalCard title="30 days" days={month} shown={on} />
+          <div className="s-card"><div className="s-card-key">Waited on you</div><div className="s-card-value">{formatDuration(snapshot.attention.blockedMs)}</div><div className="s-card-sub">today</div></div>
         </div>
-        <Chart days={shown} now={now} />
-        <p className="s-group-footer">
-          {settings.tokenMetric === 'all'
-            ? 'Counts every token, cache reads included, so totals are much larger.'
-            : 'Input, output and cache writes. Cache reads are left out, since they re-read the same context on every turn.'}
-          {' '}Codex counts come from the Codex app’s own daily totals.
-        </p>
-      </section>
+      )}
+
+      {on.length > 0 && (
+        <section>
+          <div className="s-chart-head" style={{ margin: '0 0 7px 12px' }}>
+            <h3 className="s-group-title" style={{ margin: 0 }}>Tokens per day</h3>
+            <Segmented label="Days shown" options={[{ value: 7, label: '7 days' }, { value: 30, label: '30 days' }]} value={range} onChange={setRange} />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {on.map(p => <Chart key={p} days={shown} provider={p} now={now} />)}
+          </div>
+          <p className="s-group-footer">
+            {settings.usageProviders.claude && (settings.tokenMetric === 'all'
+              ? 'Claude: every token, cache reads included. '
+              : 'Claude: input, output and cache writes; cache reads re-read the same context on every turn, so they are left out. ')}
+            {settings.usageProviders.codex && 'Codex: the Codex app’s own daily totals, which include cached input and appear once a day is over.'}
+          </p>
+        </section>
+      )}
 
       <Group title="Limit warnings" footer="Quiet hours apply to these too.">
         <Row label="Warn when a limit passes" hint="One notification per limit and reset">

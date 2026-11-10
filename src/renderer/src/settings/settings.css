@@ -881,6 +881,26 @@
   color: var(--text-2);
 }
 
+.s-card-line {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.s-card-line .s-dot {
+  align-self: center;
+}
+
+.s-card-line .s-card-value {
+  margin-top: 0;
+  font-size: 18px;
+}
+
+.s-card-line .s-card-sub {
+  margin-top: 0;
+}
+
 .s-card-value {
   margin-top: 4px;
   font-size: 22px;

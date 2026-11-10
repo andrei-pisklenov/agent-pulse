@@ -9,8 +9,9 @@ const CHECK_TEXT: Record<CheckId, { label: string, hint: string, test: string }>
   notifications: { label: 'Notifications', hint: 'Alerts you when a session needs input', test: 'Send a test' },
 }
 
+const APP_NAME: Partial<Record<CheckId, string>> = { terminal: 'Terminal', iterm: 'iTerm' }
+
 const STATE_HINT: Partial<Record<CheckState, string>> = {
-  notRunning: 'Open the app first, then test again.',
   denied: 'macOS said no. Turn it on in System Settings.',
   failed: 'The test didn’t work. Try again.',
   sent: 'A test notification went out. Did you see it?',
@@ -31,8 +32,11 @@ const CheckRow = ({ id, state }: { id: CheckId, state: CheckState }) => {
       setRunning(false)
     }
   }
+  const hint = state === 'notRunning'
+    ? `Open ${APP_NAME[id] ?? 'the app'} first, then test again.`
+    : STATE_HINT[state] ?? (state === 'ok' ? text.hint : `Not checked yet. ${text.hint}.`)
   return (
-    <Row label={text.label} hint={STATE_HINT[state] ?? (state === 'ok' ? text.hint : `Not checked yet. ${text.hint}.`)}>
+    <Row label={text.label} hint={hint}>
       {state === 'ok' && <StatusPill tone="ok">Works</StatusPill>}
       {state === 'sent' && (
         <>
@@ -54,16 +58,17 @@ export const CheckList = ({ setup }: { setup: SetupStatus }) => (
   <>{setup.checks.map(c => <CheckRow key={c.id} id={c.id} state={c.state} />)}</>
 )
 
-const today = (sessions: Session[], ...sources: Session['source'][]) =>
-  sessions.filter(s => sources.includes(s.source) && s.status !== 'ended').length
+/** Sessions the panel lists as needing you, running or finished. */
+const active = (sessions: Session[], ...sources: Session['source'][]) =>
+  sessions.filter(s => sources.includes(s.source) && (s.status === 'waiting' || s.status === 'busy' || s.status === 'finished')).length
 
 export const SourceRows = ({ setup, sessions }: { setup: SetupStatus, sessions: Session[] }) => {
-  const count = (n: number) => (n ? ` · ${n} ${n === 1 ? 'session' : 'sessions'} now` : '')
+  const count = (n: number) => (n ? ` · ${n} active now` : '')
   const rows = [
-    { key: 'cli', found: setup.sources.claudeCode, label: 'Claude Code in Terminal and iTerm', hint: `~/.claude${count(today(sessions, 'cli'))}`, icon: icons.terminal, color: '#c96442' },
-    { key: 'desktop', found: setup.sources.claudeDesktop, label: 'Claude desktop app', hint: `Code tab sessions${count(today(sessions, 'desktop'))}`, icon: icons.window, color: '#c96442' },
-    { key: 'vscode', found: setup.sources.vscode, label: 'VS Code extension', hint: setup.sources.vscode ? `Claude Code in VS Code${count(today(sessions, 'vscode'))}` : 'Shows up here once you use Claude Code in VS Code', icon: icons.code, color: '#2f80ed' },
-    { key: 'codex', found: setup.sources.codex, label: 'Codex', hint: setup.sources.codex ? `Codex CLI and Codex Desktop${count(today(sessions, 'codex'))}` : 'Shows up here once you use Codex', icon: icons.codex, color: '#3a3a3c' },
+    { key: 'cli', found: setup.sources.claudeCode, label: 'Claude Code in Terminal and iTerm', hint: `~/.claude${count(active(sessions, 'cli'))}`, icon: icons.terminal, color: '#c96442' },
+    { key: 'desktop', found: setup.sources.claudeDesktop, label: 'Claude desktop app', hint: `Code tab sessions${count(active(sessions, 'desktop'))}`, icon: icons.window, color: '#c96442' },
+    { key: 'vscode', found: setup.sources.vscode, label: 'VS Code extension', hint: setup.sources.vscode ? `Claude Code in VS Code${count(active(sessions, 'vscode'))}` : 'Shows up here once you use Claude Code in VS Code', icon: icons.code, color: '#2f80ed' },
+    { key: 'codex', found: setup.sources.codex, label: 'Codex', hint: setup.sources.codex ? `Codex CLI and Codex Desktop${count(active(sessions, 'codex'))}` : 'Shows up here once you use Codex', icon: icons.codex, color: '#3a3a3c' },
   ]
   return (
     <>
