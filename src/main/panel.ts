@@ -15,6 +15,8 @@ export interface PanelOptions {
   squareCorners: boolean
   position: SavedPosition | null
   onMoved: (position: SavedPosition) => void
+  /** Called with every new state, besides sending it to the panel. */
+  onState?: (state: PanelState) => void
 }
 
 /**
@@ -263,6 +265,7 @@ export class Panel {
 
   send(): void {
     this.window?.webContents.send(IPC.panelState, this.state)
+    this.options.onState?.(this.state)
   }
 
   private update(patch: Partial<PanelState>): void {

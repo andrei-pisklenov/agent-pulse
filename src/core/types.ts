@@ -65,6 +65,12 @@ export interface UsageTotals {
   week: TokenCounts
 }
 
+/** Claude Code tokens used on one local day ("2026-11-10"). */
+export interface DailyTokens {
+  date: string
+  tokens: TokenCounts
+}
+
 export interface CodexLimitWindow extends LimitWindow {
   durationMinutes: number
 }

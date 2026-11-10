@@ -4,7 +4,7 @@
  */
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { Collector, probeUsage, type CollectorState } from '../core'
+import { Collector, defaultClaudePaths, probeUsage, UsageHistory, type CollectorState } from '../core'
 import { readCodexSessions } from '../core/codexSessions'
 import { probeCodexUsage } from '../core/codexUsage'
 import { compareSessions } from '../core/status'
@@ -13,10 +13,14 @@ import { defaultSettings, type FromWorker, type ToWorker, type UsageProviders } 
 
 const SESSIONS_MS = 1500
 const SLOW_MS = 10_000
+/** Daily totals for the Usage page: once an hour, starting after the first scans have settled. */
+const HISTORY_MS = 60 * 60_000
+const HISTORY_FIRST_MS = 30_000
 
 const userData = process.env.PULSE_USER_DATA ?? process.cwd()
 const probeDir = join(userData, 'probe')
 const statePath = join(userData, 'state.json')
+const historyPath = join(userData, 'history.json')
 
 const initialProviders = (): UsageProviders => {
   try {
@@ -51,6 +55,24 @@ const main = async () => {
   let lastState = ''
   let codex: CodexUsage | null = null
   let codexSessions: Session[] = []
+  const history = new UsageHistory(defaultClaudePaths().transcripts, historyPath)
+  let historyTimer: NodeJS.Timeout | undefined
+  let historyRunning = false
+
+  const updateHistory = async () => {
+    if (historyRunning) return
+    clearTimeout(historyTimer)
+    historyRunning = true
+    try {
+      await history.update()
+      post({ type: 'history', history: { claude: history.daily(), updatedAt: Date.now() } })
+    } catch {
+      // Tried again on the next round.
+    } finally {
+      historyRunning = false
+      historyTimer = setTimeout(() => void updateHistory(), HISTORY_MS)
+    }
+  }
 
   const publish = async () => {
     const local = collector.snapshot()
@@ -120,6 +142,8 @@ const main = async () => {
     } else if (message.type === 'snooze') {
       collector.snooze(message.id, message.until)
       void publish()
+    } else if (message.type === 'refreshHistory') {
+      void updateHistory()
     } else if (message.type === 'refreshLimits') {
       void refreshLimits()
     } else if (message.type === 'configure') {
@@ -136,6 +160,7 @@ const main = async () => {
   void pollSessions()
   void pollSlow()
   void refreshLimits()
+  historyTimer = setTimeout(() => void updateHistory(), HISTORY_FIRST_MS)
 }
 
 void main()

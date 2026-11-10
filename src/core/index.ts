@@ -1,6 +1,7 @@
 export * from './collector.js'
 export * from './desktopSessions.js'
 export * from './forecast.js'
+export * from './history.js'
 export * from './liveSessions.js'
 export * from './paths.js'
 export * from './pending.js'

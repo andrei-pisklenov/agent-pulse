@@ -1,4 +1,4 @@
-import type { Snapshot } from '../core/types'
+import type { DailyTokens, Snapshot } from '../core/types'
 
 export type Theme = 'glass' | 'terminal'
 export type LayoutMode = 'auto' | 'vertical' | 'horizontal'
@@ -29,7 +29,7 @@ export const CRAB_DANCES: { id: CrabDance, label: string }[] = [
 
 export type TrayText = 'none' | 'counts' | 'countsAndSession'
 
-/** Optional behaviours, each switchable from the Features menu. */
+/** Optional behaviours, each switchable in Settings. */
 export interface Features {
   /** Pace forecast under the limit bars ("runs out Thu 11:40"). */
   paceForecast: boolean
@@ -73,8 +73,23 @@ export interface Settings {
   squareCorners: boolean
   /** Size the compact pill to the Dock's thickness; falls back to compactScale when the Dock hides. */
   compactMatchDock: boolean
-  /** Size of the compact pill, 1 being the original; set with the slider in the panel. */
+  /** Size of the compact pill, 1 being the original; set with the slider in Settings. */
   compactScale: number
+  /** Notify (and ping) only once a session has waited this long; 0 = right away. */
+  notifyAfterMinutes: number
+  /** No alerts or sounds between these local times ("22:00" to "08:00"). */
+  quietHours: QuietHours
+  /** Notify when a plan limit passes this percent, once per limit window; 0 = never. */
+  limitWarnPercent: number
+  /** Notify when the pace forecast says a limit runs out before it resets. */
+  warnRunOut: boolean
+}
+
+export interface QuietHours {
+  enabled: boolean
+  /** "HH:MM", local time. */
+  from: string
+  to: string
 }
 
 /** Range of the compact-size slider. */
@@ -104,6 +119,40 @@ export const defaultSettings: Settings = {
   squareCorners: false,
   compactMatchDock: true,
   compactScale: 1,
+  notifyAfterMinutes: 0,
+  quietHours: { enabled: false, from: '22:00', to: '08:00' },
+  limitWarnPercent: 90,
+  warnRunOut: true,
+}
+
+export type SettingsPage = 'setup' | 'general' | 'panel' | 'menubar' | 'usage'
+
+/** Permission tests on the Setup page. */
+export type CheckId = 'terminal' | 'iterm' | 'notifications'
+/**
+ * unchecked: never tested. ok: worked. denied: macOS refused (or the user said the test
+ * notification never came). notRunning: the app must be open for the test. failed: another error.
+ * sent: a test notification went out and waits for the user to say whether it arrived.
+ */
+export type CheckState = 'unchecked' | 'ok' | 'denied' | 'notRunning' | 'failed' | 'sent'
+
+export interface SetupStatus {
+  /** Where sessions can come from, as found on this Mac. */
+  sources: { claudeCode: boolean, claudeDesktop: boolean, vscode: boolean, codex: boolean }
+  /** Only installed apps are listed. */
+  checks: { id: CheckId, state: CheckState }[]
+  /** Whether each global shortcut could be registered (false: another app has it). */
+  shortcuts: { hotkey: boolean, panelHotkey: boolean }
+  /** Launch at login works only in the packaged app. */
+  loginItemAvailable: boolean
+  welcomeDone: boolean
+}
+
+/** Daily token totals for the Usage page. */
+export interface UsageHistory {
+  /** Claude Code, oldest day first, ending today. */
+  claude: DailyTokens[]
+  updatedAt: number
 }
 
 /** Where the panel sits; owned by the main process. */
@@ -137,6 +186,19 @@ export interface PulseApi {
   closeSwitcher: () => void
   /** PNG data URL drawn at 2x for the menu bar; empty for none. */
   setTrayImage: (dataUrl: string) => void
+  openSettings: (page?: SettingsPage) => void
+  /** Settings window: main asks it to show a page (or the welcome guide). */
+  onNavigate: (cb: (target: SettingsPage | 'welcome') => void) => () => void
+  onSetup: (cb: (status: SetupStatus) => void) => () => void
+  onHistory: (cb: (history: UsageHistory) => void) => () => void
+  runCheck: (id: CheckId) => Promise<CheckState>
+  /** After a test notification: did it arrive? */
+  confirmCheck: (id: CheckId, worked: boolean) => void
+  openPrivacySettings: (id: CheckId) => void
+  refreshLimits: () => void
+  /** Global shortcuts are off while a shortcut is being recorded. */
+  pauseHotkeys: (paused: boolean) => void
+  finishWelcome: () => void
 }
 
 export const IPC = {
@@ -154,6 +216,16 @@ export const IPC = {
   snooze: 'pulse:snooze',
   closeSwitcher: 'pulse:close-switcher',
   trayImage: 'pulse:tray-image',
+  openSettings: 'pulse:open-settings',
+  navigate: 'pulse:navigate',
+  setup: 'pulse:setup',
+  history: 'pulse:history',
+  runCheck: 'pulse:run-check',
+  confirmCheck: 'pulse:confirm-check',
+  openPrivacy: 'pulse:open-privacy',
+  refreshLimits: 'pulse:refresh-limits',
+  pauseHotkeys: 'pulse:pause-hotkeys',
+  finishWelcome: 'pulse:finish-welcome',
 } as const
 
 /** Messages between the main process and the collector utility process. */
@@ -162,5 +234,8 @@ export type ToWorker
     | { type: 'refreshLimits' }
     | { type: 'snooze', id: string, until: number | null }
     | { type: 'configure', limitsRefreshMinutes: number, usageProviders: UsageProviders }
+    | { type: 'refreshHistory' }
 
-export type FromWorker = { type: 'snapshot', snapshot: Snapshot }
+export type FromWorker
+  = | { type: 'snapshot', snapshot: Snapshot }
+    | { type: 'history', history: UsageHistory }

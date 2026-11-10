@@ -3,13 +3,43 @@ import { basename, join } from 'node:path'
 import { addTokens, emptyTokens, type TokenCounts } from './types.js'
 
 const HOUR = 3_600_000
-const CHUNK = 8 * 1024 * 1024
+export const TRANSCRIPT_CHUNK = 8 * 1024 * 1024
+const CHUNK = TRANSCRIPT_CHUNK
 
-interface TranscriptFile {
+export interface TranscriptFile {
   path: string
   /** The top-level session this file is billed to. */
   sessionId: string
   subagent: boolean
+}
+
+/** Every transcript under ~/.claude/projects: one per session, plus its subagents' files. */
+export const listTranscriptFiles = async (root: string): Promise<TranscriptFile[]> => {
+  const files: TranscriptFile[] = []
+  const entries = async (dir: string) => {
+    try {
+      return await readdir(dir, { withFileTypes: true })
+    } catch {
+      return []
+    }
+  }
+  for (const project of await entries(root)) {
+    if (!project.isDirectory()) continue
+    const projectDir = join(root, project.name)
+    for (const entry of await entries(projectDir)) {
+      if (entry.isFile() && entry.name.endsWith('.jsonl')) {
+        files.push({ path: join(projectDir, entry.name), sessionId: basename(entry.name, '.jsonl'), subagent: false })
+      } else if (entry.isDirectory()) {
+        const subagents = join(projectDir, entry.name, 'subagents')
+        for (const sub of await entries(subagents)) {
+          if (sub.isFile() && sub.name.endsWith('.jsonl')) {
+            files.push({ path: join(subagents, sub.name), sessionId: entry.name, subagent: true })
+          }
+        }
+      }
+    }
+  }
+  return files
 }
 
 interface FileCursor {
@@ -77,7 +107,7 @@ export class TokenLedger {
 
   async scan(now = Date.now()): Promise<void> {
     const since = now - this.horizonMs
-    for (const file of await this.listTranscripts()) {
+    for (const file of await listTranscriptFiles(this.root)) {
       if (!file.subagent) this.paths.set(file.sessionId, file.path)
       try {
         const info = await stat(file.path)
@@ -113,34 +143,6 @@ export class TokenLedger {
     let sum = emptyTokens()
     for (const [hour, tokens] of this.hourly) if (hour >= start) sum = addTokens(sum, tokens)
     return sum
-  }
-
-  private async listTranscripts(): Promise<TranscriptFile[]> {
-    const files: TranscriptFile[] = []
-    const entries = async (dir: string) => {
-      try {
-        return await readdir(dir, { withFileTypes: true })
-      } catch {
-        return []
-      }
-    }
-    for (const project of await entries(this.root)) {
-      if (!project.isDirectory()) continue
-      const projectDir = join(this.root, project.name)
-      for (const entry of await entries(projectDir)) {
-        if (entry.isFile() && entry.name.endsWith('.jsonl')) {
-          files.push({ path: join(projectDir, entry.name), sessionId: basename(entry.name, '.jsonl'), subagent: false })
-        } else if (entry.isDirectory()) {
-          const subagents = join(projectDir, entry.name, 'subagents')
-          for (const sub of await entries(subagents)) {
-            if (sub.isFile() && sub.name.endsWith('.jsonl')) {
-              files.push({ path: join(subagents, sub.name), sessionId: entry.name, subagent: true })
-            }
-          }
-        }
-      }
-    }
-    return files
   }
 
   private async readFrom(file: TranscriptFile, cursor: FileCursor, size: number): Promise<void> {

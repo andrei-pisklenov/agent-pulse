@@ -24,6 +24,16 @@ const api: PulseApi = {
   snooze: (id, minutes) => ipcRenderer.send(IPC.snooze, id, minutes),
   closeSwitcher: () => ipcRenderer.send(IPC.closeSwitcher),
   setTrayImage: dataUrl => ipcRenderer.send(IPC.trayImage, dataUrl),
+  openSettings: page => ipcRenderer.send(IPC.openSettings, page),
+  onNavigate: listen(IPC.navigate),
+  onSetup: listen(IPC.setup),
+  onHistory: listen(IPC.history),
+  runCheck: id => ipcRenderer.invoke(IPC.runCheck, id),
+  confirmCheck: (id, worked) => ipcRenderer.send(IPC.confirmCheck, id, worked),
+  openPrivacySettings: id => ipcRenderer.send(IPC.openPrivacy, id),
+  refreshLimits: () => ipcRenderer.send(IPC.refreshLimits),
+  pauseHotkeys: paused => ipcRenderer.send(IPC.pauseHotkeys, paused),
+  finishWelcome: () => ipcRenderer.send(IPC.finishWelcome),
 }
 
 contextBridge.exposeInMainWorld('pulse', api)

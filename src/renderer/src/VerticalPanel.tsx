@@ -1,8 +1,7 @@
 import { useState } from 'react'
 import { RUNNING_MARK, type PanelState } from '../../shared/types'
 import { groupSessions, statusLabel } from './format'
-import { CompactSize } from './CompactSize'
-import { IconChevron, IconHorizontal, IconMenu, IconPin, IconSize, Logo } from './icons'
+import { IconChevron, IconHorizontal, IconMenu, IconPin, Logo } from './icons'
 import { CodexLimitBars, LimitBars, SessionRow, Totals, type ViewProps } from './parts'
 
 const ACTIVE = ['waiting', 'busy', 'finished'] as const
@@ -10,7 +9,6 @@ const ACTIVE = ['waiting', 'busy', 'finished'] as const
 export const VerticalPanel = (props: ViewProps & { panel: PanelState }) => {
   const { sessions, limits, codex, totals, attention, settings, now, open, panel } = props
   const [showIdle, setShowIdle] = useState(false)
-  const [sizing, setSizing] = useState(false)
   const groups = groupSessions(sessions)
   const quiet = [...groups.idle, ...groups.ended]
 
@@ -22,7 +20,6 @@ export const VerticalPanel = (props: ViewProps & { panel: PanelState }) => {
         {settings.theme === 'terminal' && (
           <span className="muted counts">{groups.waiting.length}! {groups.busy.length}{RUNNING_MARK} {groups.finished.length}✓</span>
         )}
-        <button className={`icon-btn ${sizing ? 'icon-btn-on' : ''}`} aria-label="Compact size" aria-expanded={sizing} title="Compact size" onClick={() => setSizing(v => !v)}><IconSize /></button>
         <button className="icon-btn" aria-label="Switch to horizontal" title="Horizontal" onClick={() => window.pulse.setSettings({ layout: 'horizontal' })}><IconHorizontal /></button>
         <button
           className="icon-btn"
@@ -33,7 +30,6 @@ export const VerticalPanel = (props: ViewProps & { panel: PanelState }) => {
         </button>
         <button className="icon-btn" aria-label="Menu" title="Menu" onClick={() => window.pulse.showMenu()}><IconMenu /></button>
       </div>
-      {sizing && <CompactSize {...props} />}
       {codex
         ? (
             <div className="provider-limits">

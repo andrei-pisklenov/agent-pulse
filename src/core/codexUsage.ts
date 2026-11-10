@@ -63,7 +63,7 @@ const parseDailyTokens = (value: unknown): CodexUsage['dailyTokens'] => {
     if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)
       && typeof tokens === 'number' && Number.isSafeInteger(tokens) && tokens >= 0) days.set(date, tokens)
   }
-  return [...days].sort(([a], [b]) => b.localeCompare(a)).slice(0, 7).map(([date, tokens]) => ({ date, tokens }))
+  return [...days].sort(([a], [b]) => b.localeCompare(a)).slice(0, 31).map(([date, tokens]) => ({ date, tokens }))
 }
 
 /** Ask the installed CLI for account data over stdio. No login or model turn is started. */

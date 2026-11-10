@@ -3,31 +3,52 @@ import { join } from 'node:path'
 import { formatReset } from '../core/forecast'
 import type { Session, Snapshot } from '../core/types'
 import {
-  app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, Notification, screen, Tray, utilityProcess,
+  app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, Notification, screen, shell, Tray, utilityProcess,
   type MenuItemConstructorOptions, type UtilityProcess,
 } from 'electron'
-import { CRAB_DANCES, IPC, RUNNING_MARK, type Features, type FromWorker, type Settings, type ToWorker, type UsageProviders } from '../shared/types'
+import {
+  IPC, RUNNING_MARK, type CheckId, type CheckState, type FromWorker, type Settings, type SettingsPage, type SetupStatus, type ToWorker,
+  type UsageHistory,
+} from '../shared/types'
 import { displayedCodex, formatLimitWindow, usageGauges } from '../shared/usageDisplay'
+import { dueWaits, isQuiet, limitWarnings, needsYou, waitKey } from './alerts'
 import { openSession } from './openSession'
 import { Panel } from './panel'
-import { loadStored, saveStored, type SavedPosition } from './settings'
+import { loadStored, saveStored, type SavedPosition, type SetupState } from './settings'
+import { SettingsWindow } from './settingsWindow'
+import { findSources, privacyUrl, testAutomation } from './setup'
 
 app.setName('Agent Pulse')
 app.setPath('userData', join(app.getPath('appData'), 'agent-pulse'))
 
 if (!app.requestSingleInstanceLock()) app.quit()
 
+/** Limit warnings remembered; older ones belong to windows that reset long ago. */
+const MAX_WARNED = 60
+/** The Usage page asks for fresh daily totals when the last ones are older than this. */
+const HISTORY_STALE_MS = 15 * 60_000
+
 let settings: Settings
 let position: SavedPosition | null
+let setup: SetupState
+let warned: string[]
 let panel: Panel
 let tray: Tray
 let switcher: BrowserWindow | null = null
+let settingsWindow: SettingsWindow
 let worker: UtilityProcess | null = null
 let snapshot: Snapshot | null = null
+let history: UsageHistory | null = null
 let previous: Map<string, Session['status']> | null = null
+/** Waits already alerted about (or skipped), by waitKey. */
+let alerted = new Set<string>()
+let waitTimer: NodeJS.Timeout | undefined
+/** Test notifications sent and not yet confirmed. */
+const sent = new Set<CheckId>()
+let hotkeysOk = { hotkey: true, panelHotkey: true }
 let quitting = false
 
-const persist = () => saveStored({ settings, position })
+const persist = () => saveStored({ settings, position, setup, warned })
 const toWorker = (message: ToWorker) => worker?.postMessage(message)
 const rendererUrl = (hash = '') => process.env.ELECTRON_RENDERER_URL ? `${process.env.ELECTRON_RENDERER_URL}${hash}` : null
 const loadRenderer = (win: BrowserWindow, hash = '') => {
@@ -35,9 +56,6 @@ const loadRenderer = (win: BrowserWindow, hash = '') => {
   if (url) void win.loadURL(url)
   else void win.loadFile(join(__dirname, '../renderer/index.html'), { hash: hash.replace('#', '') })
 }
-
-/** Waiting sessions the user has not snoozed. */
-const needsYou = (s: Session) => s.status === 'waiting' && !s.snoozedUntil
 
 const startWorker = () => {
   worker = utilityProcess.fork(join(__dirname, 'worker.js'), [], {
@@ -47,6 +65,10 @@ const startWorker = () => {
   })
   worker.on('message', (message: FromWorker) => {
     if (message.type === 'snapshot') onSnapshot(message.snapshot)
+    else if (message.type === 'history') {
+      history = message.history
+      settingsWindow.send(IPC.history, history)
+    }
   })
   // Restart if it crashes; state lives on disk.
   worker.on('exit', () => {
@@ -59,30 +81,68 @@ const startWorker = () => {
 const configureWorker = () =>
   toWorker({ type: 'configure', limitsRefreshMinutes: settings.limitsRefreshMinutes, usageProviders: settings.usageProviders })
 
+const quiet = () => isQuiet(settings.quietHours, Date.now())
+
 const playSound = (name: 'Ping' | 'Glass') => {
-  if (settings.sound) execFile('/usr/bin/afplay', [`/System/Library/Sounds/${name}.aiff`], () => undefined)
+  if (settings.sound && !quiet()) execFile('/usr/bin/afplay', [`/System/Library/Sounds/${name}.aiff`], () => undefined)
 }
 
 const broadcast = (channel: string, value: unknown) => {
   panel.window?.webContents.send(channel, value)
   switcher?.webContents.send(channel, value)
+  settingsWindow.send(channel, value)
+}
+
+/** Alerts about waits that have lasted long enough, then sets a timer for the next one. */
+const checkWaits = () => {
+  clearTimeout(waitTimer)
+  const sessions = snapshot?.sessions ?? []
+  const now = Date.now()
+  const { due, next } = dueWaits(sessions, alerted, settings.notifyAfterMinutes, now)
+  for (const s of due) alerted.add(waitKey(s))
+  // Waits that come due in quiet hours are dropped, not saved for the morning.
+  if (due.length && !quiet()) {
+    playSound('Ping')
+    if (settings.notifyWaiting) for (const s of due) notify(s)
+  }
+  // Forget waits that are over.
+  const open = new Set(sessions.filter(s => s.status === 'waiting').map(waitKey))
+  alerted = new Set([...alerted].filter(key => open.has(key)))
+  if (next !== null) waitTimer = setTimeout(checkWaits, Math.max(1000, next - now + 250))
+}
+
+const checkLimits = () => {
+  if (!snapshot || quiet()) return
+  const warnings = limitWarnings(settings, snapshot, new Set(warned), Date.now())
+  if (!warnings.length) return
+  for (const w of warnings) notifyText(w.title, w.body, () => settingsWindow.show('usage'))
+  warned = [...warned, ...warnings.map(w => w.key)].slice(-MAX_WARNED)
+  persist()
 }
 
 const onSnapshot = (next: Snapshot) => {
   snapshot = next
   broadcast(IPC.snapshot, next)
   if (previous) {
-    const newlyWaiting = next.sessions.filter(s => needsYou(s) && previous?.get(s.id) !== 'waiting')
-    const newlyFinished = next.sessions.filter(s => s.status === 'finished' && previous?.get(s.id) === 'busy')
-    if (newlyWaiting.length) {
-      playSound('Ping')
-      if (settings.notifyWaiting) for (const s of newlyWaiting) notify(s)
-    } else if (newlyFinished.length) {
-      playSound('Glass')
-    }
+    const newlyFinished = next.sessions.some(s => s.status === 'finished' && previous?.get(s.id) === 'busy')
+    const newlyWaiting = next.sessions.some(s => needsYou(s) && !alerted.has(waitKey(s)) && previous?.get(s.id) !== 'waiting')
+    // A session that starts waiting gets the Ping (now or after the delay), not the Glass too.
+    if (newlyFinished && !newlyWaiting) playSound('Glass')
+  } else {
+    // Sessions already waiting when the app starts were seen before; don't alert about them again.
+    for (const s of next.sessions) if (needsYou(s)) alerted.add(waitKey(s))
   }
   previous = new Map(next.sessions.map(s => [s.id, s.status]))
+  checkWaits()
+  checkLimits()
   updateTrayTitle()
+}
+
+const notifyText = (title: string, body: string, onClick: () => void) => {
+  if (!Notification.isSupported()) return
+  const n = new Notification({ title, body, silent: true })
+  n.on('click', onClick)
+  n.show()
 }
 
 const notify = (session: Session) => {
@@ -143,6 +203,50 @@ const setTrayImage = (dataUrl: string) => {
   tray.setImage(image)
 }
 
+const setupStatus = (): SetupStatus => {
+  const found = findSources()
+  return {
+    sources: found.sources,
+    checks: found.checkIds.map(id => ({ id, state: sent.has(id) ? 'sent' : setup.checks[id] ?? 'unchecked' })),
+    shortcuts: hotkeysOk,
+    loginItemAvailable: app.isPackaged,
+    welcomeDone: setup.welcomeDone,
+  }
+}
+
+const sendSetup = () => settingsWindow.send(IPC.setup, setupStatus())
+
+const setCheck = (id: CheckId, state: CheckState) => {
+  sent.delete(id)
+  if (state === 'sent') sent.add(id)
+  else setup = { ...setup, checks: { ...setup.checks, [id]: state } }
+  persist()
+  sendSetup()
+}
+
+const runCheck = async (id: CheckId): Promise<CheckState> => {
+  if (id === 'notifications') {
+    if (!Notification.isSupported()) {
+      setCheck(id, 'failed')
+      return 'failed'
+    }
+    new Notification({ title: 'Agent Pulse', body: 'Notifications work. You’ll see one like this when a session needs you.', silent: true }).show()
+    setCheck(id, 'sent')
+    return 'sent'
+  }
+  const state = await testAutomation(id)
+  setCheck(id, state)
+  return state
+}
+
+/** Something on the Setup page that needs the user: a refused permission or a taken shortcut. */
+const setupProblems = (): number => {
+  const status = setupStatus()
+  const denied = status.checks.filter(c => c.state === 'denied').length
+  const shortcuts = Object.values(status.shortcuts).filter(ok => !ok).length
+  return denied + shortcuts + (status.sources.claudeCode || status.sources.codex ? 0 : 1)
+}
+
 const applySettings = (patch: Partial<Settings>) => {
   const before = settings
   settings = { ...settings, ...patch }
@@ -159,6 +263,8 @@ const applySettings = (patch: Partial<Settings>) => {
   if (settings.limitsRefreshMinutes !== before.limitsRefreshMinutes || settings.usageProviders !== before.usageProviders) {
     configureWorker()
   }
+  if (settings.notifyAfterMinutes !== before.notifyAfterMinutes) checkWaits()
+  if (settings.limitWarnPercent !== before.limitWarnPercent || settings.warnRunOut !== before.warnRunOut) checkLimits()
   broadcast(IPC.settings, settings)
   updateTrayTitle()
 }
@@ -169,8 +275,6 @@ const syncLoginItem = () => {
     app.setLoginItemSettings({ openAtLogin: settings.launchAtLogin })
   }
 }
-
-const setFeature = (key: keyof Features, on: boolean) => applySettings({ features: { ...settings.features, [key]: on } })
 
 const togglePanel = () => {
   const win = panel.window
@@ -220,33 +324,31 @@ const showSwitcher = () => {
 
 const registerHotkeys = () => {
   globalShortcut.unregisterAll()
-  const bind = (accelerator: string, action: () => void) => {
+  const bind = (accelerator: string, action: () => void): boolean => {
     try {
-      globalShortcut.register(accelerator, action)
+      return globalShortcut.register(accelerator, action)
     } catch {
       // Invalid accelerator in settings.json; the menu still works.
+      return false
     }
   }
-  bind(settings.hotkey, () => (settings.features.quickSwitcher ? showSwitcher() : togglePanel()))
-  if (settings.panelHotkey !== settings.hotkey) bind(settings.panelHotkey, togglePanel)
+  const hotkey = bind(settings.hotkey, () => (settings.features.quickSwitcher ? showSwitcher() : togglePanel()))
+  const panelHotkey = settings.panelHotkey === settings.hotkey || bind(settings.panelHotkey, togglePanel)
+  hotkeysOk = { hotkey, panelHotkey }
+  sendSetup()
+}
+
+const openSettings = (page?: SettingsPage | 'welcome') => {
+  settingsWindow.show(page)
+  if (!history || Date.now() - history.updatedAt > HISTORY_STALE_MS) toWorker({ type: 'refreshHistory' })
 }
 
 const buildMenu = (): Menu => {
   const sessions = snapshot?.sessions ?? []
   const attention = sessions.filter(s => s.status === 'waiting' || s.status === 'busy' || s.status === 'finished').slice(0, 8)
   const mark = { waiting: '!', busy: RUNNING_MARK, finished: '✓', idle: '·', ended: '·' } as const
-  const radio = <K extends keyof Settings>(key: K, value: Settings[K], label: string): MenuItemConstructorOptions => ({
-    label, type: 'radio', checked: settings[key] === value, click: () => applySettings({ [key]: value }),
-  })
-  const check = (key: keyof Settings, label: string): MenuItemConstructorOptions => ({
-    label, type: 'checkbox', checked: settings[key] === true, click: () => applySettings({ [key]: !settings[key] }),
-  })
-  const feature = (key: keyof Features, label: string): MenuItemConstructorOptions => ({
-    label, type: 'checkbox', checked: settings.features[key], click: () => setFeature(key, !settings.features[key]),
-  })
-  const provider = (key: keyof UsageProviders, label: string): MenuItemConstructorOptions => ({
-    label, type: 'checkbox', checked: settings.usageProviders[key],
-    click: () => applySettings({ usageProviders: { ...settings.usageProviders, [key]: !settings.usageProviders[key] } }),
+  const check = (key: 'collapseToPill' | 'alwaysOnTop', label: string): MenuItemConstructorOptions => ({
+    label, type: 'checkbox', checked: settings[key], click: () => applySettings({ [key]: !settings[key] }),
   })
   const showClaude = settings.usageProviders.claude
   const limits = showClaude ? snapshot?.limits : null
@@ -266,7 +368,14 @@ const buildMenu = (): Menu => {
       return [{ label: `${name}  ${w.percent}%${reset ? ` · resets ${soon ? 'in ' : ''}${reset}` : ''}`, enabled: false }]
     })
   if (codex?.limitError) limitLines.push({ label: codex.limitError, enabled: false })
+  const problems = setupProblems()
   const template: MenuItemConstructorOptions[] = [
+    ...(problems
+      ? [
+          { label: `Finish setup: ${problems === 1 ? '1 thing needs' : `${problems} things need`} you…`, click: () => openSettings('setup') },
+          { type: 'separator' as const },
+        ]
+      : []),
     ...limitLines,
     ...(limitLines.length ? [{ type: 'separator' as const }] : []),
     ...attention.map(s => ({
@@ -281,101 +390,38 @@ const buildMenu = (): Menu => {
       registerAccelerator: false,
       click: () => (panel.window?.isVisible() ? panel.window.hide() : panel.show()),
     },
-    ...(settings.features.quickSwitcher
-      ? [{ label: 'Find session…', accelerator: settings.hotkey, registerAccelerator: false, click: showSwitcher }]
-      : []),
-    {
-      label: 'Theme',
-      submenu: [
-        radio('theme', 'glass', 'Glass'),
-        radio('theme', 'terminal', 'Terminal HUD'),
-        { type: 'separator' },
-        { label: 'Horizontal layout', enabled: false },
-        radio('horizontalStyle', 'chips', 'Chips with details'),
-        radio('horizontalStyle', 'segments', 'Status segments'),
-        radio('horizontalStyle', 'ticker', 'Thin ticker'),
-        { type: 'separator' },
-        { label: 'Rows', enabled: false },
-        radio('density', 'comfortable', 'Comfortable (two lines)'),
-        radio('density', 'compact', 'Compact (one line)'),
-      ],
-    },
-    {
-      label: 'Menu bar',
-      submenu: [
-        { label: 'Icon', enabled: false },
-        radio('trayIcon', 'crab', 'Crab'),
-        ...(settings.trayIcon === 'crab'
-          ? [{
-              label: `    ↳ Dance: ${CRAB_DANCES.find(d => d.id === settings.crabDance)?.label ?? ''}`,
-              submenu: CRAB_DANCES.map(d => radio('crabDance', d.id, d.label)),
-            }]
-          : []),
-        radio('trayIcon', 'octopus', 'Octopus'),
-        radio('trayIcon', 'heartbeat', 'Heartbeat line'),
-        radio('trayIcon', 'rings', 'Twin limit rings'),
-        radio('trayIcon', 'spark', 'Spark'),
-        radio('trayIcon', 'bars', 'Signal bars'),
-        radio('trayIcon', 'text', 'Text only'),
-        { type: 'separator' },
-        { label: 'Text', enabled: false },
-        radio('trayText', 'none', 'None'),
-        radio('trayText', 'counts', `Status counts (! ${RUNNING_MARK} ✓)`),
-        radio('trayText', 'countsAndSession', 'Status counts + session %'),
-      ],
-    },
-    {
-      label: 'Layout',
-      submenu: [
-        radio('layout', 'auto', 'Auto (by screen edge)'),
-        radio('layout', 'vertical', 'Vertical'),
-        radio('layout', 'horizontal', 'Horizontal'),
-        { type: 'separator' },
-        { label: 'Gap to screen edge', enabled: false },
-        radio('snapGap', 0, 'None (flush)'),
-        radio('snapGap', 4, '4 px'),
-        radio('snapGap', 8, '8 px'),
-        check('snapOverDock', 'Snap over the Dock'),
-        check('squareCorners', 'Square corners'),
-      ],
-    },
-    {
-      label: 'Features',
-      submenu: [
-        feature('paceForecast', 'Limit pace forecast'),
-        feature('pendingQuestion', 'Show what waiting sessions ask'),
-        feature('blockedTime', 'Time sessions waited on you'),
-        feature('quickSwitcher', 'Quick switcher on main hotkey'),
-      ],
-    },
-    {
-      label: 'Usage providers',
-      submenu: [
-        provider('claude', 'Claude'),
-        provider('codex', 'Codex'),
-      ],
-    },
-    {
-      label: 'Token counts',
-      submenu: [
-        radio('tokenMetric', 'noCacheRead', 'Input + output + cache writes'),
-        radio('tokenMetric', 'all', 'Including cache reads'),
-      ],
-    },
     check('collapseToPill', 'Rest as pill, expand on hover'),
     check('alwaysOnTop', 'Always on top'),
-    check('notifyWaiting', 'Notify when input needed'),
-    check('sound', 'Sound on finish / waiting'),
-    { ...check('launchAtLogin', 'Launch at login'), enabled: app.isPackaged, sublabel: app.isPackaged ? undefined : 'packaged app only' },
     { type: 'separator' },
     {
       label: limits?.error || codex?.limitError ? `Refresh limits (last: ${limits?.error ?? codex?.limitError})` : 'Refresh limits now',
       enabled: settings.usageProviders.claude || settings.usageProviders.codex,
       click: () => toWorker({ type: 'refreshLimits' }),
     },
+    { label: 'Settings…', accelerator: 'Command+,', registerAccelerator: false, click: () => openSettings() },
+    { type: 'separator' },
     { label: 'Quit Agent Pulse', accelerator: 'Command+Q', click: () => app.quit() },
   ]
   return Menu.buildFromTemplate(template)
+}
+
+/** The menu bar shown while the settings window is in front: ⌘, ⌘W ⌘Q and text editing. */
+const setAppMenu = () => {
+  Menu.setApplicationMenu(Menu.buildFromTemplate([
+    {
+      label: 'Agent Pulse',
+      submenu: [
+        { label: 'Settings…', accelerator: 'Command+,', click: () => openSettings() },
+        { type: 'separator' },
+        { role: 'hide' },
+        { role: 'hideOthers' },
+        { type: 'separator' },
+        { label: 'Quit Agent Pulse', accelerator: 'Command+Q', click: () => app.quit() },
+      ],
+    },
+    { role: 'editMenu' },
+    { role: 'windowMenu' },
+  ]))
 }
 
 app.whenReady().then(() => {
@@ -383,6 +429,10 @@ app.whenReady().then(() => {
   const stored = loadStored()
   settings = stored.settings
   position = stored.position
+  setup = stored.setup
+  warned = stored.warned
+  settingsWindow = new SettingsWindow(loadRenderer)
+  setAppMenu()
 
   panel = new Panel({
     theme: settings.theme,
@@ -396,6 +446,8 @@ app.whenReady().then(() => {
       position = p
       persist()
     },
+    // The settings window previews the pill at the panel's size.
+    onState: state => settingsWindow.send(IPC.panelState, state),
   })
   panel.create()
   // Resizing, moving or hiding the Dock changes the work area; the pill follows it when matching the Dock.
@@ -412,8 +464,16 @@ app.whenReady().then(() => {
     event.sender.send(IPC.settings, settings)
     if (snapshot) event.sender.send(IPC.snapshot, snapshot)
     if (event.sender === panel.window?.webContents) panel.rendererReady()
+    if (event.sender === settingsWindow.window?.webContents) {
+      event.sender.send(IPC.panelState, panel.panelState)
+      event.sender.send(IPC.setup, setupStatus())
+      if (history) event.sender.send(IPC.history, history)
+      settingsWindow.rendererReady()
+    }
   })
-  ipcMain.on(IPC.setSize, (_e, width: number, height: number) => panel.setContentSize(width, height))
+  ipcMain.on(IPC.setSize, (event, width: number, height: number) => {
+    if (event.sender === panel.window?.webContents) panel.setContentSize(width, height)
+  })
   ipcMain.on(IPC.dragStart, () => panel.dragStart())
   ipcMain.on(IPC.dragEnd, () => panel.dragEnd())
   ipcMain.on(IPC.openSession, (_e, id: string) => {
@@ -431,10 +491,25 @@ app.whenReady().then(() => {
     // Only the panel renderer draws the menu-bar icon.
     if (event.sender === panel.window?.webContents) setTrayImage(dataUrl)
   })
+  ipcMain.on(IPC.openSettings, (_e, page?: SettingsPage) => openSettings(page))
+  ipcMain.handle(IPC.runCheck, (_e, id: CheckId) => runCheck(id))
+  ipcMain.on(IPC.confirmCheck, (_e, id: CheckId, worked: boolean) => {
+    setCheck(id, worked ? 'ok' : 'denied')
+    if (!worked) void shell.openExternal(privacyUrl(id))
+  })
+  ipcMain.on(IPC.openPrivacy, (_e, id: CheckId) => void shell.openExternal(privacyUrl(id)))
+  ipcMain.on(IPC.refreshLimits, () => toWorker({ type: 'refreshLimits' }))
+  ipcMain.on(IPC.pauseHotkeys, (_e, paused: boolean) => (paused ? globalShortcut.unregisterAll() : registerHotkeys()))
+  ipcMain.on(IPC.finishWelcome, () => {
+    setup = { ...setup, welcomeDone: true }
+    persist()
+    sendSetup()
+  })
 
   syncLoginItem()
   registerHotkeys()
   startWorker()
+  if (!setup.welcomeDone) openSettings('welcome')
 })
 
 app.on('second-instance', () => {
