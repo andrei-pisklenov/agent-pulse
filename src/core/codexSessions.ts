@@ -33,7 +33,7 @@ export const readCodexSessions = async (now = Date.now()): Promise<Session[]> =>
       JOIN history.thread_turns AS turn ON turn.thread_id = thread.id
       WHERE thread.archived = 0
         AND thread.originator = 'Codex Desktop'
-        AND (thread.thread_source = 'user' OR thread.thread_source IS NULL)
+        AND (thread.thread_source IN ('user', 'agent_created_thread', 'agent_forked_thread') OR thread.thread_source IS NULL)
         AND thread.source NOT LIKE '%subagent%'
         AND thread.attached_thread_parent_id IS NULL
         AND thread.updated_at >= ?

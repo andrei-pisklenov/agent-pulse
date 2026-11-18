@@ -29,7 +29,7 @@ It takes a few minutes, most of them spent downloading Electron. To do it by han
 ## What it shows
 
 - **Every session in one place.** Terminal `claude`, the Claude desktop app (Code tab) and the VS Code extension, grouped by what they need from you: *needs input*, *running*, *finished* (until you open it) and *idle*. Desktop sessions that ended in the last 24 hours are listed too.
-- **Running Codex tasks.** Active turns from Codex Desktop appear under **Running**. Click a Codex row to open its chat.
+- **Running Codex tasks.** Active turns from Codex Desktop appear under **Running**, including chats created or forked by an agent. Click a Codex row to open its chat.
 - **What a waiting session is asking.** The question or the permission it needs, read from the end of its transcript. If it can wait, snooze it for 15 minutes.
 - **Your plan limits.** The 5-hour session and weekly bars with their reset times, plus a pace forecast such as "runs out Thu 11:40" or "~84% at reset".
 - **Codex in the vertical panel.** When a Codex CLI is available, the collapsed pill shows one limit for Claude and one for Codex. It prefers the 5-hour window and labels the fallback with its actual duration. Hover to see both providers’ available limits and reset times, plus Codex account token totals when available.
